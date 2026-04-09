@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: parker
+      POSTGRES_PASSWORD: parker
+      POSTGRES_DB: parker_scheduling
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://parker:parker@db:5432/parker_scheduling
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: "qwen3.5:9b"
+      FACILITY_ZIP_CODE: "11375"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:

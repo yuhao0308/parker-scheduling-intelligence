@@ -1,0 +1,102 @@
+"""Tests for rationale generation — LLM and template fallback."""
+from __future__ import annotations
+
+from unittest.mock import patch, MagicMock
+
+import pytest
+
+from app.config import Settings
+from app.services.rationale import (
+    CandidateSignals,
+    _template_rationale,
+    generate_rationales,
+)
+
+
+def _make_signal(rank=1, name="Maria R.", would_trigger_ot=False):
+    return CandidateSignals(
+        rank=rank,
+        name=name,
+        license="CNA",
+        employment_class="FT",
+        home_unit="U-SA1",
+        home_unit_typology="SUBACUTE",
+        target_unit="U-SA1",
+        target_unit_typology="SUBACUTE",
+        ot_headroom_normalized=0.8,
+        ot_headroom_description="6.0h of straight time remaining this week",
+        would_trigger_ot=would_trigger_ot,
+        distance_miles=3.2,
+        clinical_fit_score=1.0,
+        clinical_fit_description="home unit — perfect fit",
+        is_home_unit=True,
+        float_penalty=0.0,
+        total_score=0.87,
+    )
+
+
+class TestTemplateRationale:
+    def test_basic_template(self):
+        sig = _make_signal()
+        result = _template_rationale(sig)
+        assert "Maria R." in result
+        assert "#1" in result
+        assert "3 mi" in result or "3mi" in result
+        assert "6.0h" in result
+
+    def test_ot_warning(self):
+        sig = _make_signal(would_trigger_ot=True)
+        result = _template_rationale(sig)
+        assert "OT" in result
+
+    def test_floating_status(self):
+        sig = _make_signal()
+        sig.is_home_unit = False
+        sig.home_unit = "U-LT1"
+        result = _template_rationale(sig)
+        assert "floating" in result.lower() or "U-LT1" in result
+
+
+class TestGenerateRationales:
+    @pytest.mark.asyncio
+    async def test_fallback_on_ollama_error(self):
+        """When Ollama is unreachable, fall back to template."""
+        settings = Settings(ollama_model="qwen3.5:9b")
+        candidates = [_make_signal(rank=1), _make_signal(rank=2, name="James T.")]
+
+        with patch("ollama.chat", side_effect=Exception("Connection refused")):
+            rationales, source = await generate_rationales(
+                candidates, "U-SA1", "SUBACUTE", "DAY", "2026-04-09", settings
+            )
+
+        assert source == "template"
+        assert len(rationales) == 2
+        assert "Maria R." in rationales[0]
+        assert "James T." in rationales[1]
+
+    @pytest.mark.asyncio
+    async def test_empty_candidates(self):
+        settings = Settings(ollama_model="qwen3.5:9b")
+        rationales, source = await generate_rationales(
+            [], "U-SA1", "SUBACUTE", "DAY", "2026-04-09", settings
+        )
+        assert rationales == []
+        assert source == "template"
+
+    @pytest.mark.asyncio
+    async def test_successful_llm_response(self):
+        """Mock a successful Ollama response."""
+        settings = Settings(ollama_model="qwen3.5:9b")
+        candidates = [_make_signal(rank=1)]
+
+        mock_response = MagicMock()
+        mock_response.message.content = '{"candidates": [{"rank": 1, "rationale": "Maria is the best pick — subacute-trained, close to facility, plenty of straight time left."}]}'
+
+        with patch("ollama.chat", return_value=mock_response):
+            rationales, source = await generate_rationales(
+                candidates, "U-SA1", "SUBACUTE", "DAY", "2026-04-09", settings
+            )
+
+        assert source == "llm"
+        assert len(rationales) == 1
+        assert "Maria" in rationales[0]

@@ -1,6 +1,9 @@
 import type {
   CalloutRequest,
   CalloutResponse,
+  GenerateScheduleRequest,
+  GenerateScheduleResult,
+  MonthlySchedule,
   OverrideRequest,
   OverrideResponse,
   RecentCallout,
@@ -54,3 +57,9 @@ export const getWeights = () => request<ScoringWeights>("/config/weights");
 
 export const updateWeights = (payload: Partial<ScoringWeights>) =>
   put<ScoringWeights>("/config/weights", payload);
+
+export const getMonthlySchedule = (year: number, month: number) =>
+  request<MonthlySchedule>(`/schedule/monthly?year=${year}&month=${month}`);
+
+export const generateSchedule = (req: GenerateScheduleRequest) =>
+  post<GenerateScheduleResult>("/schedule/generate", req);

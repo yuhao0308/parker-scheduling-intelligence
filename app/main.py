@@ -2,23 +2,35 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+import logging
+
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.exceptions import AppError
-from app.routes import admin, callout, health, lookup, overrides, sync
+from app.routes import admin, callout, health, lookup, overrides, schedule, sync
 
 logger = structlog.get_logger()
+
+# structlog 25.x removed get_level_from_name; use stdlib logging levels
+_NAME_TO_LEVEL = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "WARN": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+    "NOTSET": logging.NOTSET,
+}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    log_level = _NAME_TO_LEVEL.get(settings.log_level.upper(), logging.INFO)
     structlog.configure(
-        wrapper_class=structlog.make_filtering_bound_logger(
-            structlog.get_level_from_name(settings.log_level)
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(log_level),
     )
     logger.info("starting", version="0.1.0", shadow_mode=settings.shadow_mode)
     yield
@@ -37,6 +49,7 @@ app.include_router(overrides.router)
 app.include_router(sync.router)
 app.include_router(admin.router)
 app.include_router(lookup.router)
+app.include_router(schedule.router)
 
 
 @app.exception_handler(AppError)

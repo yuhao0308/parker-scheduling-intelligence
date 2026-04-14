@@ -1,9 +1,9 @@
 weights:
   overtime_headroom: 0.40    # biggest financial lever — avoid premium pay
+  clinical_fit: 0.30         # subacute vs LT match — patient safety (up from 0.22)
   proximity: 0.20            # mobilization likelihood — closer = more likely to show up
-  clinical_fit: 0.22         # subacute vs LT match — patient safety
-  float_penalty: 0.13        # protect new hires on home unit
-  historical_acceptance: 0.05 # tiebreaker only — prevents burnout loop
+  float_penalty: 0.10        # protect new hires on home unit (down from 0.13)
+  historical_acceptance: 0.10 # prevents burnout loop (up from 0.05)
 
 thresholds:
   max_relevant_distance_miles: 30

@@ -47,3 +47,47 @@ class HoursLedgerSyncRecord(BaseModel):
 
 class HoursSyncPayload(BaseModel):
     records: List[HoursLedgerSyncRecord]
+
+
+# --- Monthly schedule view schemas ---
+
+
+class AssignedEmployeeOut(BaseModel):
+    employee_id: str
+    name: str
+    license: str
+
+
+class ShiftSlotOut(BaseModel):
+    unit_id: str
+    unit_name: str
+    shift_date: str
+    shift_label: str
+    status: str  # "assigned" | "unassigned" | "callout"
+    assigned_employees: List[AssignedEmployeeOut]
+    callout_count: int
+    callout_employee_ids: List[str] = []
+
+
+class DayScheduleOut(BaseModel):
+    date: str
+    slots: List[ShiftSlotOut]
+
+
+class MonthlyScheduleOut(BaseModel):
+    year: int
+    month: int
+    days: List[DayScheduleOut]
+
+
+class GenerateScheduleRequest(BaseModel):
+    year: int
+    month: int
+    staff_count_override: Optional[int] = None
+
+
+class ScheduleGenerationResult(BaseModel):
+    entries_created: int
+    warnings: List[str]
+    scenario: str
+    unfilled_slots: int

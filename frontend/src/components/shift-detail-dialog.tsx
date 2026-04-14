@@ -74,7 +74,7 @@ export function ShiftDetailDialog({
     if (candidate.rank === 1) {
       overrideMutation.mutate(
         {
-          recommendation_log_id: result.callout_id,
+          recommendation_log_id: result.recommendation_log_id,
           selected_employee_id: candidate.employee_id,
           coordinator_id: "scheduler",
         },
@@ -90,7 +90,7 @@ export function ShiftDetailDialog({
     if (!result || !overrideCandidate) return;
     overrideMutation.mutate(
       {
-        recommendation_log_id: result.callout_id,
+        recommendation_log_id: result.recommendation_log_id,
         selected_employee_id: overrideCandidate.employee_id,
         coordinator_id: "scheduler",
         override_reason: reason,

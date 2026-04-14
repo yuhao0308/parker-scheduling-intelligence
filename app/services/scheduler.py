@@ -313,7 +313,6 @@ def _assign_one(
             proximity=0.5,  # not relevant for batch scheduling
             clinical_fit=clin_fit,
             float_penalty=float_pen,
-            historical_acceptance=0.5,
             weights=scoring_config.weights,
         )
 

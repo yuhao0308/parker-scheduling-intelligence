@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useUnits, useStaffForUnit } from "@/lib/queries";
-import type { CalloutRequest, ShiftLabel } from "@/lib/types";
+import { typologyLabel, type CalloutRequest, type ShiftLabel } from "@/lib/types";
 
 interface CalloutFormProps {
   onSubmit: (req: CalloutRequest) => void;
@@ -66,7 +66,7 @@ export function CalloutForm({ onSubmit, isPending }: CalloutFormProps) {
               <SelectContent>
                 {units?.map((u) => (
                   <SelectItem key={u.unit_id} value={u.unit_id}>
-                    {u.name} ({u.typology})
+                    {u.name} ({typologyLabel(u.typology)})
                   </SelectItem>
                 ))}
               </SelectContent>

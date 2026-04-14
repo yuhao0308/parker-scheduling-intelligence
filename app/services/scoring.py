@@ -1,9 +1,11 @@
 """Deterministic scoring engine with config-driven weights.
 
-score(c) = w1*overtime_headroom + w2*proximity + w3*clinical_fit
-           - w4*float_penalty + w5*historical_acceptance
+score(c) = w1*overtime_headroom + w2*clinical_fit
+           - w3*float_penalty + w4*proximity
 
-Weight priority: w1 >> w3 ~ w2 > w4 >> w5
+Weight priority: w1 >> w2 > w3 >> w4
+Overtime dominates per client guidance ("top of the priority" — Sean @ Parker).
+Proximity is retained only as a tiebreaker; it was never client-confirmed.
 """
 
 from __future__ import annotations
@@ -23,7 +25,6 @@ class ScoringWeights:
     proximity: float
     clinical_fit: float
     float_penalty: float
-    historical_acceptance: float
 
 
 @dataclass
@@ -57,7 +58,6 @@ class ScoreResult:
     proximity: float
     clinical_fit: float
     float_penalty: float
-    historical_acceptance: float
     total: float
 
 
@@ -133,7 +133,6 @@ def score_candidate(
     proximity: float,
     clinical_fit: float,
     float_penalty: float,
-    historical_acceptance: float,
     weights: ScoringWeights,
 ) -> ScoreResult:
     """Compute the weighted score for a candidate."""
@@ -142,7 +141,6 @@ def score_candidate(
         + weights.proximity * proximity
         + weights.clinical_fit * clinical_fit
         - weights.float_penalty * float_penalty
-        + weights.historical_acceptance * historical_acceptance
     )
 
     return ScoreResult(
@@ -150,6 +148,5 @@ def score_candidate(
         proximity=round(proximity, 4),
         clinical_fit=round(clinical_fit, 4),
         float_penalty=round(float_penalty, 4),
-        historical_acceptance=round(historical_acceptance, 4),
         total=round(total, 4),
     )

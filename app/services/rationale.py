@@ -1,8 +1,7 @@
 """Rationale generation via local LLM (Ollama) with template fallback.
 
-Generates one plain-English sentence per ranked candidate, explaining
-why they rank where they do. Uses the same scoring signals that produced
-the ranking — the rationale must never contradict the math.
+Generates concise bullet-point explanations per ranked candidate using
+the same scoring signals that produced the ranking.
 """
 
 from __future__ import annotations
@@ -20,9 +19,19 @@ SYSTEM_PROMPT = """You are a staffing coordinator assistant at a skilled nursing
 For each candidate in the list, write EXACTLY 3 bullet points explaining why they are
 ranked at this position. Use this format for each candidate:
 - Hours this month: X.X h worked (Y.Y h remaining this cycle)
+- Experience: [License] — [clinical fit description using Short-Term / Long-Term language]
 - Distance: Z.Z miles from facility
-- Experience: [License] — [clinical fit description, e.g. "Home unit match" or "Subacute → LT cover"]
-Speak in plain coordinator language — no jargon, no hedging."""
+Lead with the primary drivers: overtime headroom (the top priority), unit-type
+experience (Short-Term vs Long-Term), and float status. Distance is a minor
+tiebreaker, so mention it only in the final bullet.
+Use the facility's vocabulary: say "Short-Term" and "Long-Term" (never "subacute" or
+"LT"). Speak in plain coordinator language — no jargon, no hedging."""
+
+_TYPOLOGY_LABEL = {"LT": "Long-Term", "SUBACUTE": "Short-Term"}
+
+
+def _typology_label(value: str) -> str:
+    return _TYPOLOGY_LABEL.get(value, value)
 
 
 @dataclass
@@ -42,7 +51,7 @@ class CandidateSignals:
     would_trigger_ot: bool
     distance_miles: float
     clinical_fit_score: float
-    clinical_fit_description: str  # e.g. "subacute-trained, matches target"
+    clinical_fit_description: str  # e.g. "Short-Term-trained covering Long-Term"
     is_home_unit: bool
     float_penalty: float
     total_score: float
@@ -57,28 +66,28 @@ def _build_prompt(
 ) -> str:
     """Build the user message with all candidate data."""
     lines = [
-        f"Call-out: Unit {unit_id} ({unit_typology}), {shift_label} shift on {shift_date}",
+        f"Call-out: Unit {unit_id} ({_typology_label(unit_typology)}), {shift_label} shift on {shift_date}",
         "",
         "Candidates (ranked by score):",
     ]
     for c in candidates:
-        lines.append(f"")
+        lines.append("")
         lines.append(f"{c.rank}. {c.name} ({c.license}, {c.employment_class})")
-        lines.append(f"   Home unit: {c.home_unit} ({c.home_unit_typology})")
+        lines.append(f"   Home unit: {c.home_unit} ({_typology_label(c.home_unit_typology)})")
         lines.append(f"   OT headroom: {c.ot_headroom_description}")
         lines.append(f"   Would trigger OT: {'yes' if c.would_trigger_ot else 'no'}")
-        lines.append(f"   Distance: {c.distance_miles:.1f} miles from facility")
         lines.append(f"   Clinical fit: {c.clinical_fit_description}")
         lines.append(f"   Float status: {'home unit' if c.is_home_unit else 'floating'}")
         lines.append(f"   Score: {c.total_score:.3f}")
+        lines.append(f"   Distance (tiebreaker only): {c.distance_miles:.1f} miles from facility")
 
     lines.append("")
     lines.append(
         "Return a JSON object with a 'candidates' array. Each element must have "
         "'rank' (int) and 'rationale' (string, exactly 3 bullet points using this format):\n"
         "- Hours this month: X.X h worked (Y.Y h remaining this cycle)\n"
-        "- Distance: Z.Z miles from facility\n"
-        "- Experience: [License] — [clinical fit description]"
+        "- Experience: [License] — [clinical fit description using Short-Term / Long-Term language]\n"
+        "- Distance: Z.Z miles from facility"
     )
     return "\n".join(lines)
 
@@ -89,13 +98,15 @@ def _template_rationale(c: CandidateSignals) -> str:
     Returns exactly 3 bullet points per candidate.
     """
     clinical_desc = c.clinical_fit_description if c.clinical_fit_description else (
-        "Home unit match" if c.is_home_unit else f"Floating from {c.home_unit}"
+        "Home unit match"
+        if c.is_home_unit
+        else f"Floating from {c.home_unit} ({_typology_label(c.home_unit_typology)})"
     )
 
     lines = [
         f"- Hours: {c.ot_headroom_description}",
-        f"- Distance: {c.distance_miles:.1f} miles from facility",
         f"- Experience: {c.license} — {clinical_desc}",
+        f"- Distance: {c.distance_miles:.1f} miles from facility",
     ]
     return "\n".join(lines)
 
@@ -142,7 +153,6 @@ async def generate_rationales(
 
         result = RationaleResponse.model_validate_json(response.message.content)
 
-        # Build a rank -> rationale map
         rationale_map = {r.rank: r.rationale for r in result.candidates}
         rationales = [rationale_map.get(c.rank, _template_rationale(c)) for c in candidates]
 

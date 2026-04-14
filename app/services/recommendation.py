@@ -157,16 +157,12 @@ async def generate_recommendations(
             config=scoring_config,
         )
 
-        # Historical acceptance (default 0.5 for Phase 1)
-        hist_acceptance = 0.5
-
         # Score
         result = score_candidate(
             ot_headroom=ot_headroom,
             proximity=prox_score,
             clinical_fit=clin_fit,
             float_penalty=float_pen,
-            historical_acceptance=hist_acceptance,
             weights=scoring_config.weights,
         )
 
@@ -235,7 +231,6 @@ async def generate_recommendations(
                     proximity=res.proximity,
                     clinical_fit=res.clinical_fit,
                     float_penalty=res.float_penalty,
-                    historical_acceptance=res.historical_acceptance,
                     total=res.total,
                 ),
                 rationale=rationales[i] if i < len(rationales) else "",
@@ -260,10 +255,11 @@ async def generate_recommendations(
         filter_stats=filter_stats.model_dump(),
     )
     db.add(rec_log)
-    await db.commit()
+    await db.flush()
 
     return CalloutResponse(
         callout_id=callout_id,
+        recommendation_log_id=rec_log.id,
         unit_id=callout.unit_id,
         unit_name=unit.name,
         shift_date=callout.shift_date,
@@ -314,6 +310,9 @@ def _ot_headroom_description(
         return f"{headroom:.1f}h of straight time remaining this week"
 
 
+_TYPOLOGY_LABEL = {"LT": "Long-Term", "SUBACUTE": "Short-Term"}
+
+
 def _clinical_fit_description(
     cand: CandidateRecord, target_unit_id: str, target_typology: UnitTypology
 ) -> str:
@@ -326,12 +325,12 @@ def _clinical_fit_description(
 
     home_typ = cand.home_unit_typology
     if home_typ == target_typology.value:
-        return f"same typology ({home_typ})"
+        return f"same unit type ({_TYPOLOGY_LABEL.get(home_typ, home_typ)})"
 
     if home_typ == "SUBACUTE" and target_typology == UnitTypology.LT:
-        return "subacute-trained covering LT — acceptable"
+        return "Short-Term-trained covering Long-Term — acceptable"
 
     if home_typ == "LT" and target_typology == UnitTypology.SUBACUTE:
-        return "LT-only covering subacute — clinical risk"
+        return "Long-Term-only covering Short-Term — clinical risk"
 
     return "unknown fit"

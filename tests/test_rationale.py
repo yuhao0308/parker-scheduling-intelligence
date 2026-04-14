@@ -24,7 +24,11 @@ def _make_signal(rank=1, name="Maria R.", would_trigger_ot=False):
         target_unit="U-SA1",
         target_unit_typology="SUBACUTE",
         ot_headroom_normalized=0.8,
-        ot_headroom_description="6.0h of straight time remaining this week",
+        ot_headroom_description=(
+            "0.0h remaining this week (would trigger OT)"
+            if would_trigger_ot
+            else "6.0h of straight time remaining this week"
+        ),
         would_trigger_ot=would_trigger_ot,
         distance_miles=3.2,
         clinical_fit_score=1.0,
@@ -39,20 +43,23 @@ class TestTemplateRationale:
     def test_basic_template(self):
         sig = _make_signal()
         result = _template_rationale(sig)
-        assert "Maria R." in result
-        assert "#1" in result
-        assert "3 mi" in result or "3mi" in result
+        assert result.count("\n") == 2
+        assert result.startswith("- Hours:")
+        assert "- Experience:" in result
+        assert result.endswith("- Distance: 3.2 miles from facility")
         assert "6.0h" in result
 
     def test_ot_warning(self):
         sig = _make_signal(would_trigger_ot=True)
         result = _template_rationale(sig)
-        assert "OT" in result
+        assert "would trigger OT" in result
 
     def test_floating_status(self):
         sig = _make_signal()
         sig.is_home_unit = False
         sig.home_unit = "U-LT1"
+        sig.home_unit_typology = "LT"
+        sig.clinical_fit_description = ""
         result = _template_rationale(sig)
         assert "floating" in result.lower() or "U-LT1" in result
 
@@ -71,8 +78,10 @@ class TestGenerateRationales:
 
         assert source == "template"
         assert len(rationales) == 2
-        assert "Maria R." in rationales[0]
-        assert "James T." in rationales[1]
+        assert rationales[0].startswith("- Hours:")
+        assert rationales[1].startswith("- Hours:")
+        assert "- Experience:" in rationales[0]
+        assert "- Distance:" in rationales[1]
 
     @pytest.mark.asyncio
     async def test_empty_candidates(self):
@@ -90,7 +99,12 @@ class TestGenerateRationales:
         candidates = [_make_signal(rank=1)]
 
         mock_response = MagicMock()
-        mock_response.message.content = '{"candidates": [{"rank": 1, "rationale": "Maria is the best pick — subacute-trained, close to facility, plenty of straight time left."}]}'
+        mock_response.message.content = (
+            '{"candidates": [{"rank": 1, "rationale": '
+            '"- Hours: 6.0h of straight time remaining this week\\n'
+            '- Experience: CNA — Home unit match\\n'
+            '- Distance: 3.2 miles from facility"}]}'
+        )
 
         with patch("ollama.chat", return_value=mock_response):
             rationales, source = await generate_rationales(

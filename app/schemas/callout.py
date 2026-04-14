@@ -18,6 +18,7 @@ class CalloutRequest(BaseModel):
 
 class CalloutResponse(BaseModel):
     callout_id: int
+    recommendation_log_id: int
     unit_id: str
     unit_name: str
     shift_date: date

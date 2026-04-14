@@ -9,10 +9,9 @@ import {
 
 const dimensions: { key: keyof Omit<ScoreBreakdownType, "total">; label: string; color: string }[] = [
   { key: "overtime_headroom", label: "OT Headroom", color: "bg-emerald-500" },
-  { key: "proximity", label: "Proximity", color: "bg-blue-500" },
   { key: "clinical_fit", label: "Clinical Fit", color: "bg-violet-500" },
   { key: "float_penalty", label: "Float Penalty", color: "bg-amber-500" },
-  { key: "historical_acceptance", label: "Acceptance", color: "bg-rose-400" },
+  { key: "proximity", label: "Proximity", color: "bg-blue-500" },
 ];
 
 export function ScoreBreakdown({ breakdown }: { breakdown: ScoreBreakdownType }) {

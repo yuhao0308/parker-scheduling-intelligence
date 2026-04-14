@@ -17,10 +17,12 @@ from app.config import Settings
 logger = structlog.get_logger()
 
 SYSTEM_PROMPT = """You are a staffing coordinator assistant at a skilled nursing facility.
-For each candidate in the list, write ONE concise sentence explaining why they are
-ranked at this position. Reference specific data points (overtime headroom, distance,
-unit experience, float status). Speak in plain coordinator language — no jargon,
-no hedging."""
+For each candidate in the list, write EXACTLY 3 bullet points explaining why they are
+ranked at this position. Use this format for each candidate:
+- Hours this month: X.X h worked (Y.Y h remaining this cycle)
+- Distance: Z.Z miles from facility
+- Experience: [License] — [clinical fit description, e.g. "Home unit match" or "Subacute → LT cover"]
+Speak in plain coordinator language — no jargon, no hedging."""
 
 
 @dataclass
@@ -73,29 +75,29 @@ def _build_prompt(
     lines.append("")
     lines.append(
         "Return a JSON object with a 'candidates' array. Each element must have "
-        "'rank' (int) and 'rationale' (string, one sentence)."
+        "'rank' (int) and 'rationale' (string, exactly 3 bullet points using this format):\n"
+        "- Hours this month: X.X h worked (Y.Y h remaining this cycle)\n"
+        "- Distance: Z.Z miles from facility\n"
+        "- Experience: [License] — [clinical fit description]"
     )
     return "\n".join(lines)
 
 
 def _template_rationale(c: CandidateSignals) -> str:
-    """Fallback template-based rationale when Ollama is unavailable."""
-    parts = [f"{c.name} — #{c.rank}."]
+    """Fallback template-based rationale when Ollama is unavailable.
 
-    parts.append(c.license)
+    Returns exactly 3 bullet points per candidate.
+    """
+    clinical_desc = c.clinical_fit_description if c.clinical_fit_description else (
+        "Home unit match" if c.is_home_unit else f"Floating from {c.home_unit}"
+    )
 
-    if c.is_home_unit:
-        parts.append("on home unit")
-    else:
-        parts.append(f"floating from {c.home_unit}")
-
-    parts.append(f"{c.distance_miles:.0f}mi from facility")
-    parts.append(c.ot_headroom_description)
-
-    if c.would_trigger_ot:
-        parts.append("(would trigger OT)")
-
-    return ", ".join(parts) + "."
+    lines = [
+        f"- Hours: {c.ot_headroom_description}",
+        f"- Distance: {c.distance_miles:.1f} miles from facility",
+        f"- Experience: {c.license} — {clinical_desc}",
+    ]
+    return "\n".join(lines)
 
 
 async def generate_rationales(

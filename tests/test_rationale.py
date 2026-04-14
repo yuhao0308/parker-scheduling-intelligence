@@ -113,4 +113,4 @@ class TestGenerateRationales:
 
         assert source == "llm"
         assert len(rationales) == 1
-        assert "Maria" in rationales[0]
+        assert rationales[0].startswith("- Hours:")

@@ -151,7 +151,11 @@ async def generate_rationales(
             options={"temperature": settings.ollama_temperature},
         )
 
-        result = RationaleResponse.model_validate_json(response.message.content)
+        content = response.message.content
+        if content is None:
+            raise ValueError("Ollama returned an empty response")
+
+        result = RationaleResponse.model_validate_json(content)
 
         rationale_map = {r.rank: r.rationale for r in result.candidates}
         rationales = [rationale_map.get(c.rank, _template_rationale(c)) for c in candidates]

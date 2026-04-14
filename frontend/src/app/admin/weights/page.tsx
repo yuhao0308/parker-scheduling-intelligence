@@ -125,7 +125,12 @@ export default function WeightsPage() {
               </div>
               <Slider
                 value={[value]}
-                onValueChange={([v]) => handleWeightChange(key, Math.round(v * 100) / 100)}
+                onValueChange={(nextValue) => {
+                  const sliderValue = Array.isArray(nextValue)
+                    ? (nextValue[0] ?? value)
+                    : nextValue;
+                  handleWeightChange(key, Math.round(sliderValue * 100) / 100);
+                }}
                 min={0}
                 max={1}
                 step={0.01}

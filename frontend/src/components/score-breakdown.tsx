@@ -21,7 +21,7 @@ export function ScoreBreakdown({ breakdown }: { breakdown: ScoreBreakdownType })
         const value = breakdown[key];
         return (
           <Tooltip key={key}>
-            <TooltipTrigger asChild>
+            <TooltipTrigger>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-muted-foreground w-16 truncate">{label}</span>
                 <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">

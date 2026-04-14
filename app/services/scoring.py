@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 from app.schemas.common import ShiftLabel, UnitTypology
 

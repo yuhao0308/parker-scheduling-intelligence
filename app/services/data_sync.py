@@ -13,7 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.hours import HoursLedger
 from app.models.schedule import Callout, PTOEntry, ScheduleEntry
-from app.models.staff import StaffCrossTraining, StaffMaster, StaffOps
+from app.models.staff import (
+    EmploymentClass as StaffEmploymentClass,
+    LicenseType as StaffLicenseType,
+    StaffCrossTraining,
+    StaffMaster,
+    StaffOps,
+)
 from app.models.unit import Unit
 from app.schemas.schedule import (
     CalloutSyncRecord,
@@ -35,8 +41,8 @@ async def sync_staff(
         existing = await db.get(StaffMaster, rec.employee_id)
         if existing:
             existing.name = rec.name
-            existing.license = rec.license
-            existing.employment_class = rec.employment_class
+            existing.license = StaffLicenseType(rec.license.value)
+            existing.employment_class = StaffEmploymentClass(rec.employment_class.value)
             existing.zip_code = rec.zip_code
             existing.is_active = rec.is_active
             updated += 1
@@ -44,8 +50,8 @@ async def sync_staff(
             staff = StaffMaster(
                 employee_id=rec.employee_id,
                 name=rec.name,
-                license=rec.license,
-                employment_class=rec.employment_class,
+                license=StaffLicenseType(rec.license.value),
+                employment_class=StaffEmploymentClass(rec.employment_class.value),
                 zip_code=rec.zip_code,
                 is_active=rec.is_active,
             )

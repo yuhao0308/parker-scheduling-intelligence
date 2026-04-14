@@ -25,7 +25,7 @@ from app.models.staff import StaffMaster
 from app.models.unit import Unit
 from app.schemas.callout import CalloutRequest, CalloutResponse
 from app.schemas.candidate import FilterStats, ScoreBreakdown, ScoredCandidate
-from app.schemas.common import LicenseType, ShiftLabel, UnitTypology
+from app.schemas.common import EmploymentClass, LicenseType, ShiftLabel, UnitTypology
 from app.services.filter import (
     CandidateRecord,
     ExclusionRecord,
@@ -223,7 +223,7 @@ async def generate_recommendations(
                 employee_id=cand.employee_id,
                 name=cand.name,
                 license=cand.license,
-                employment_class=cand.employment_class,
+                employment_class=EmploymentClass(cand.employment_class),
                 home_unit=cand.home_unit_id,
                 score=res.total,
                 score_breakdown=ScoreBreakdown(

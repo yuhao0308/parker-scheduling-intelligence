@@ -6,7 +6,7 @@ Returns a normalized score: closer = higher score.
 
 from __future__ import annotations
 
-import pgeocode
+import pgeocode  # type: ignore[import-untyped]
 
 
 # Lazy-loaded distance calculator

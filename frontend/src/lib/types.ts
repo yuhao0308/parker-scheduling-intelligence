@@ -7,8 +7,19 @@ export interface ScoreBreakdown {
   proximity: number;
   clinical_fit: number;
   float_penalty: number;
-  historical_acceptance: number;
   total: number;
+}
+
+// Client-facing typology labels. The DB enum is LT/SUBACUTE (clinical terms),
+// but Parker staff say "Long-Term" / "Short-Term" — always render via this map.
+export const TYPOLOGY_LABEL: Record<string, string> = {
+  LT: "Long-Term",
+  SUBACUTE: "Short-Term",
+};
+
+export function typologyLabel(value: string | null | undefined): string {
+  if (!value) return "";
+  return TYPOLOGY_LABEL[value] ?? value;
 }
 
 export interface ScoredCandidate {
@@ -99,7 +110,6 @@ export interface ScoringWeights {
     proximity: number;
     clinical_fit: number;
     float_penalty: number;
-    historical_acceptance: number;
   };
   thresholds: {
     max_relevant_distance_miles: number;

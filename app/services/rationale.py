@@ -18,9 +18,17 @@ logger = structlog.get_logger()
 
 SYSTEM_PROMPT = """You are a staffing coordinator assistant at a skilled nursing facility.
 For each candidate in the list, write ONE concise sentence explaining why they are
-ranked at this position. Reference specific data points (overtime headroom, distance,
-unit experience, float status). Speak in plain coordinator language — no jargon,
-no hedging."""
+ranked at this position. Lead with the primary drivers: overtime headroom (the top
+priority), unit-type experience (Short-Term vs Long-Term), and float status. Distance
+is a minor tiebreaker — mention it only if nothing else differentiates two candidates.
+Use the facility's vocabulary: say "Short-Term" and "Long-Term" (never "subacute" or
+"LT"). Speak in plain coordinator language — no jargon, no hedging."""
+
+_TYPOLOGY_LABEL = {"LT": "Long-Term", "SUBACUTE": "Short-Term"}
+
+
+def _typology_label(value: str) -> str:
+    return _TYPOLOGY_LABEL.get(value, value)
 
 
 @dataclass
@@ -55,19 +63,19 @@ def _build_prompt(
 ) -> str:
     """Build the user message with all candidate data."""
     lines = [
-        f"Call-out: Unit {unit_id} ({unit_typology}), {shift_label} shift on {shift_date}",
+        f"Call-out: Unit {unit_id} ({_typology_label(unit_typology)}), {shift_label} shift on {shift_date}",
         "",
         "Candidates (ranked by score):",
     ]
     for c in candidates:
         lines.append(f"")
         lines.append(f"{c.rank}. {c.name} ({c.license}, {c.employment_class})")
-        lines.append(f"   Home unit: {c.home_unit} ({c.home_unit_typology})")
+        lines.append(f"   Home unit: {c.home_unit} ({_typology_label(c.home_unit_typology)})")
         lines.append(f"   OT headroom: {c.ot_headroom_description}")
         lines.append(f"   Would trigger OT: {'yes' if c.would_trigger_ot else 'no'}")
-        lines.append(f"   Distance: {c.distance_miles:.1f} miles from facility")
         lines.append(f"   Clinical fit: {c.clinical_fit_description}")
         lines.append(f"   Float status: {'home unit' if c.is_home_unit else 'floating'}")
+        lines.append(f"   Distance (tiebreaker only): {c.distance_miles:.1f} miles from facility")
         lines.append(f"   Score: {c.total_score:.3f}")
 
     lines.append("")
@@ -85,15 +93,18 @@ def _template_rationale(c: CandidateSignals) -> str:
     parts.append(c.license)
 
     if c.is_home_unit:
-        parts.append("on home unit")
+        parts.append(f"on home unit ({_typology_label(c.home_unit_typology)})")
     else:
-        parts.append(f"floating from {c.home_unit}")
+        parts.append(
+            f"floating from {c.home_unit} ({_typology_label(c.home_unit_typology)})"
+        )
 
-    parts.append(f"{c.distance_miles:.0f}mi from facility")
     parts.append(c.ot_headroom_description)
 
     if c.would_trigger_ot:
         parts.append("(would trigger OT)")
+
+    parts.append(f"{c.distance_miles:.0f}mi away")
 
     return ", ".join(parts) + "."
 

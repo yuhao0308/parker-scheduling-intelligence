@@ -12,7 +12,6 @@ class ScoreBreakdown(BaseModel):
     proximity: float
     clinical_fit: float
     float_penalty: float
-    historical_acceptance: float
     total: float
 
 

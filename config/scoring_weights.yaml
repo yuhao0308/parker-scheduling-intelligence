@@ -1,9 +1,8 @@
 weights:
-  overtime_headroom: 0.40    # biggest financial lever — avoid premium pay
-  proximity: 0.20            # mobilization likelihood — closer = more likely to show up
-  clinical_fit: 0.22         # subacute vs LT match — patient safety
-  float_penalty: 0.13        # protect new hires on home unit
-  historical_acceptance: 0.05 # tiebreaker only — prevents burnout loop
+  overtime_headroom: 0.50    # Sean: "top of the priority" — biggest financial lever
+  clinical_fit: 0.30         # short- vs long-term unit training match
+  float_penalty: 0.15        # protect home-unit staffing + new hires
+  proximity: 0.05            # tiebreaker only — not a client-confirmed signal
 
 thresholds:
   max_relevant_distance_miles: 30
@@ -12,8 +11,8 @@ thresholds:
 
 clinical_fit_scores:
   exact_match: 1.0           # home unit or cross-trained for target typology
-  subacute_to_lt: 0.8        # subacute staff covering LT — acceptable
-  lt_to_subacute: 0.0        # LT-only staff covering subacute — severe penalty
+  subacute_to_lt: 0.8        # Short-Term-trained covering Long-Term — acceptable
+  lt_to_subacute: 0.0        # Long-Term-only covering Short-Term — severe penalty
 
 float_penalty_values:
   home_unit: 0.0             # no penalty — target is home unit

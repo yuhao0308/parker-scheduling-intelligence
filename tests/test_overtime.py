@@ -15,7 +15,7 @@ from app.services.overtime import calculate_ot_headroom
 
 
 class TestStandardOvertimeCNA:
-    """CNA/PCT/LPN weekly overtime after 37.5 hours."""
+    """CNA/PCT/LPN: full headroom up to 37.5h, linear decay through 37.5–62.5h."""
 
     def test_fresh_employee_full_headroom(self):
         headroom, ot = calculate_ot_headroom(
@@ -27,77 +27,112 @@ class TestStandardOvertimeCNA:
         assert headroom == 1.0
         assert ot is False
 
-    def test_30_hours_partial_headroom(self):
-        """30h + 8.25h shift = 38.25h → triggers OT, but still has 7.5h headroom."""
+    def test_30_hours_still_full_headroom(self):
+        """30h is straight-time — no penalty. OT flag still fires if shift crosses 37.5h."""
         headroom, ot = calculate_ot_headroom(
             LicenseType.CNA, hours_this_cycle=30.0,
             shift_count_this_biweek=0,
             employee_shifts=[], target_date=date(2026, 4, 9),
             target_label=ShiftLabel.DAY,
         )
-        assert headroom == pytest.approx(7.5 / 37.5)
-        assert ot is True  # 30 + 8.25 = 38.25 > 37.5
+        assert headroom == 1.0
+        assert ot is True  # 30 + 8.25 = 38.25 > 37.5 → OT flag
 
-    def test_exactly_at_threshold(self):
+    def test_at_threshold_no_penalty_yet(self):
+        """At exactly 37.5h, headroom is still full — penalty starts only in the OT band."""
         headroom, ot = calculate_ot_headroom(
             LicenseType.CNA, hours_this_cycle=37.5,
             shift_count_this_biweek=0,
             employee_shifts=[], target_date=date(2026, 4, 9),
             target_label=ShiftLabel.DAY,
         )
-        assert headroom == 0.0
-        assert ot is True  # adding 8.25h would push over
+        assert headroom == 1.0
+        assert ot is True
 
-    def test_already_in_ot(self):
+    def test_in_ot_band_partial_headroom(self):
+        """45h is 7.5h into the 25h OT band → 1 - 7.5/25 = 0.7."""
         headroom, ot = calculate_ot_headroom(
             LicenseType.CNA, hours_this_cycle=45.0,
             shift_count_this_biweek=0,
             employee_shifts=[], target_date=date(2026, 4, 9),
             target_label=ShiftLabel.DAY,
         )
+        assert headroom == pytest.approx(0.7)
+        assert ot is True
+
+    def test_deep_ot_band_lower_headroom(self):
+        """55h is 17.5h into the 25h OT band → 1 - 17.5/25 = 0.3."""
+        headroom, ot = calculate_ot_headroom(
+            LicenseType.CNA, hours_this_cycle=55.0,
+            shift_count_this_biweek=0,
+            employee_shifts=[], target_date=date(2026, 4, 9),
+            target_label=ShiftLabel.DAY,
+        )
+        assert headroom == pytest.approx(0.3)
+        assert ot is True
+
+    def test_at_soft_cap_zero_headroom(self):
+        """At 62.5h (Sean's soft cap: +25h of OT), headroom drops to 0."""
+        headroom, ot = calculate_ot_headroom(
+            LicenseType.CNA, hours_this_cycle=62.5,
+            shift_count_this_biweek=0,
+            employee_shifts=[], target_date=date(2026, 4, 9),
+            target_label=ShiftLabel.DAY,
+        )
         assert headroom == 0.0
         assert ot is True
 
-    def test_just_under_threshold(self):
-        """29.25h + 8.25h shift = 37.5h exactly. Should NOT trigger OT."""
+    def test_beyond_soft_cap_zero_headroom(self):
+        headroom, ot = calculate_ot_headroom(
+            LicenseType.CNA, hours_this_cycle=65.0,
+            shift_count_this_biweek=0,
+            employee_shifts=[], target_date=date(2026, 4, 9),
+            target_label=ShiftLabel.DAY,
+        )
+        assert headroom == 0.0
+        assert ot is True
+
+    def test_just_under_threshold_no_ot_flag(self):
+        """29.25h + 8.25h = 37.5h exactly. Should NOT trigger OT flag."""
         headroom, ot = calculate_ot_headroom(
             LicenseType.CNA, hours_this_cycle=29.25,
             shift_count_this_biweek=0,
             employee_shifts=[], target_date=date(2026, 4, 9),
             target_label=ShiftLabel.DAY,
         )
-        assert headroom == pytest.approx(8.25 / 37.5)
+        assert headroom == 1.0
         assert ot is False
 
-    def test_just_over_threshold(self):
-        """29.26h + 8.25h = 37.51h. SHOULD trigger OT."""
+    def test_just_over_threshold_flags_ot(self):
+        """29.26h + 8.25h = 37.51h. SHOULD trigger OT flag (but headroom still 1.0)."""
         headroom, ot = calculate_ot_headroom(
             LicenseType.CNA, hours_this_cycle=29.26,
             shift_count_this_biweek=0,
             employee_shifts=[], target_date=date(2026, 4, 9),
             target_label=ShiftLabel.DAY,
         )
+        assert headroom == 1.0
         assert ot is True
 
     def test_lpn_same_rules_as_cna(self):
-        """LPN at 20h → 20 + 8.25 = 28.25 < 37.5 → no OT."""
         headroom, ot = calculate_ot_headroom(
             LicenseType.LPN, hours_this_cycle=20.0,
             shift_count_this_biweek=0,
             employee_shifts=[], target_date=date(2026, 4, 9),
             target_label=ShiftLabel.DAY,
         )
-        assert headroom == pytest.approx(17.5 / 37.5)
+        assert headroom == 1.0
         assert ot is False
 
-    def test_pct_same_rules_as_cna(self):
+    def test_pct_in_ot_band(self):
         headroom, ot = calculate_ot_headroom(
-            LicenseType.PCT, hours_this_cycle=37.5,
+            LicenseType.PCT, hours_this_cycle=50.0,
             shift_count_this_biweek=0,
             employee_shifts=[], target_date=date(2026, 4, 9),
             target_label=ShiftLabel.DAY,
         )
-        assert headroom == 0.0
+        # 50h is 12.5h into the 25h OT band → 1 - 12.5/25 = 0.5
+        assert headroom == pytest.approx(0.5)
         assert ot is True
 
 

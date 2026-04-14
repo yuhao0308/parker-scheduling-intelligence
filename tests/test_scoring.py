@@ -19,11 +19,10 @@ from app.services.scoring import (
 @pytest.fixture
 def weights():
     return ScoringWeights(
-        overtime_headroom=0.40,
-        proximity=0.20,
-        clinical_fit=0.22,
-        float_penalty=0.13,
-        historical_acceptance=0.05,
+        overtime_headroom=0.50,
+        proximity=0.05,
+        clinical_fit=0.30,
+        float_penalty=0.15,
     )
 
 
@@ -136,34 +135,42 @@ class TestFloatPenalty:
 class TestScoreCandidate:
     def test_high_ot_headroom_wins(self, weights):
         """Candidate with more OT headroom should score higher, all else equal."""
-        high = score_candidate(1.0, 0.5, 0.8, 0.0, 0.5, weights)
-        low = score_candidate(0.0, 0.5, 0.8, 0.0, 0.5, weights)
+        high = score_candidate(1.0, 0.5, 0.8, 0.0, weights)
+        low = score_candidate(0.0, 0.5, 0.8, 0.0, weights)
         assert high.total > low.total
 
     def test_ot_headroom_dominates(self, weights):
-        """OT headroom should outweigh all other factors combined."""
-        # Best OT, worst everything else
-        ot_champ = score_candidate(1.0, 0.0, 0.0, 1.0, 0.0, weights)
-        # Worst OT, best everything else
-        ot_loser = score_candidate(0.0, 1.0, 1.0, 0.0, 1.0, weights)
-        # w1*1.0 - w4*1.0 = 0.40 - 0.13 = 0.27
-        # w2*1.0 + w3*1.0 + w5*1.0 = 0.20 + 0.22 + 0.05 = 0.47
-        # In this extreme case OT loser wins. But the test verifies the
-        # more realistic scenario where OT headroom difference is large.
-        big_ot = score_candidate(1.0, 0.5, 0.5, 0.3, 0.5, weights)
-        no_ot = score_candidate(0.0, 0.5, 0.5, 0.3, 0.5, weights)
-        assert big_ot.total - no_ot.total == pytest.approx(0.40)
+        """OT headroom difference should translate directly to score delta."""
+        big_ot = score_candidate(1.0, 0.5, 0.5, 0.3, weights)
+        no_ot = score_candidate(0.0, 0.5, 0.5, 0.3, weights)
+        assert big_ot.total - no_ot.total == pytest.approx(0.50)
+
+    def test_ot_beats_clinical_and_proximity_combined(self, weights):
+        """With OT at 0.50 and clinical+proximity at 0.35, OT must win head-to-head."""
+        ot_champ = score_candidate(1.0, 0.0, 0.0, 0.0, weights)
+        other_champ = score_candidate(0.0, 1.0, 1.0, 0.0, weights)
+        assert ot_champ.total > other_champ.total
 
     def test_float_penalty_subtracts(self, weights):
-        no_float = score_candidate(0.5, 0.5, 0.5, 0.0, 0.5, weights)
-        float_pen = score_candidate(0.5, 0.5, 0.5, 1.0, 0.5, weights)
+        no_float = score_candidate(0.5, 0.5, 0.5, 0.0, weights)
+        float_pen = score_candidate(0.5, 0.5, 0.5, 1.0, weights)
         assert no_float.total > float_pen.total
+
+    def test_weights_sum_to_one(self, weights):
+        """Positive-signal weights must sum to 1.0 for interpretable scores."""
+        total = (
+            weights.overtime_headroom
+            + weights.proximity
+            + weights.clinical_fit
+            + weights.float_penalty
+        )
+        assert total == pytest.approx(1.0)
 
 
 class TestLoadScoringConfig:
     def test_loads_yaml(self):
         config = load_scoring_config(Path("config/scoring_weights.yaml"))
-        assert config.weights.overtime_headroom == 0.40
-        assert config.weights.proximity == 0.20
+        assert config.weights.overtime_headroom == 0.50
+        assert config.weights.proximity == 0.05
         assert config.max_relevant_distance_miles == 30
         assert config.clinical_fit_scores["lt_to_subacute"] == 0.0

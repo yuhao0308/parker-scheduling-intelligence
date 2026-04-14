@@ -1,9 +1,12 @@
 """Overtime headroom calculator.
 
 Two distinct OT tracks:
-  CNA/PCT/LPN: Weekly OT after 37.5 hours
+  CNA/PCT/LPN: Weekly OT after 37.5 hours. Headroom uses a piecewise soft-cap
+               matching Sean's rule ("more than 20–25 hours overtime per week,
+               then I would not call him"): full headroom up to 37.5h, linear
+               decay through the OT band, zero beyond HIGH_OT_SOFT_CAP_HOURS.
   RN:          Dual-track — daily OT (2nd shift in operational day) AND
-               biweekly OT (11th shift in 14-day pay cycle)
+               biweekly OT (11th shift in 14-day pay cycle).
 
 The returned headroom is normalized to 0.0–1.0 for scoring.
 """
@@ -17,6 +20,8 @@ from app.services.shift_utils import SHIFT_DURATION_HOURS, is_rn_daily_ot
 
 # Overtime thresholds
 WEEKLY_OT_THRESHOLD_HOURS = 37.5
+# Sean's soft cap: 25h of OT above straight time. Beyond this, "I would not call him."
+HIGH_OT_SOFT_CAP_HOURS = WEEKLY_OT_THRESHOLD_HOURS + 25.0  # 62.5
 BIWEEKLY_SHIFT_OT_THRESHOLD = 10  # 11th shift triggers OT
 
 
@@ -48,12 +53,28 @@ def calculate_ot_headroom(
 
 
 def _standard_headroom(hours_this_cycle: float) -> tuple[float, bool]:
-    """CNA/PCT/LPN: simple weekly OT after 37.5 hours."""
+    """CNA/PCT/LPN: weekly OT after 37.5h, with a soft cap at +25h of OT.
+
+    Headroom curve (Sean's rule):
+      hours <= 37.5            -> 1.0 (straight time; no penalty)
+      37.5 < hours <= 62.5     -> linear decay 1.0 -> 0.0 across the OT band
+      hours > 62.5             -> 0.0 (don't call)
+
+    `would_trigger_ot` still fires as soon as the shift pushes past 37.5h so
+    the rationale text can call it out — but the score no longer cliffs.
+    """
     hours_after_shift = hours_this_cycle + SHIFT_DURATION_HOURS
     would_trigger = hours_after_shift > WEEKLY_OT_THRESHOLD_HOURS
 
-    headroom_hours = max(0.0, WEEKLY_OT_THRESHOLD_HOURS - hours_this_cycle)
-    normalized = min(1.0, headroom_hours / WEEKLY_OT_THRESHOLD_HOURS)
+    if hours_this_cycle <= WEEKLY_OT_THRESHOLD_HOURS:
+        normalized = 1.0
+    elif hours_this_cycle >= HIGH_OT_SOFT_CAP_HOURS:
+        normalized = 0.0
+    else:
+        ot_band = HIGH_OT_SOFT_CAP_HOURS - WEEKLY_OT_THRESHOLD_HOURS
+        ot_used = hours_this_cycle - WEEKLY_OT_THRESHOLD_HOURS
+        normalized = max(0.0, 1.0 - (ot_used / ot_band))
+
     return normalized, would_trigger
 
 

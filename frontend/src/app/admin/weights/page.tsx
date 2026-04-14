@@ -13,10 +13,9 @@ import type { ScoringWeights } from "@/lib/types";
 
 const weightLabels: Record<string, string> = {
   overtime_headroom: "Overtime Headroom",
-  proximity: "Proximity",
+  proximity: "Proximity (tiebreaker)",
   clinical_fit: "Clinical Fit",
   float_penalty: "Float Penalty",
-  historical_acceptance: "Historical Acceptance",
 };
 
 export default function WeightsPage() {

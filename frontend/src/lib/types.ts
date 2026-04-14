@@ -93,6 +93,49 @@ export interface RecentCallout {
   override_reason: string | null;
 }
 
+// --- Monthly schedule types ---
+
+export interface AssignedEmployee {
+  employee_id: string;
+  name: string;
+  license: string;
+}
+
+export interface ShiftSlot {
+  unit_id: string;
+  unit_name: string;
+  shift_date: string;
+  shift_label: ShiftLabel;
+  status: "assigned" | "unassigned" | "callout";
+  assigned_employees: AssignedEmployee[];
+  callout_count: number;
+  callout_employee_ids: string[];
+}
+
+export interface DaySchedule {
+  date: string;
+  slots: ShiftSlot[];
+}
+
+export interface MonthlySchedule {
+  year: number;
+  month: number;
+  days: DaySchedule[];
+}
+
+export interface GenerateScheduleRequest {
+  year: number;
+  month: number;
+  staff_count_override?: number;
+}
+
+export interface GenerateScheduleResult {
+  entries_created: number;
+  warnings: string[];
+  scenario: string;
+  unfilled_slots: number;
+}
+
 export interface ScoringWeights {
   weights: {
     overtime_headroom: number;

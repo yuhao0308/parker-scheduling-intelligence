@@ -43,7 +43,7 @@ export function CandidateRow({ candidate, onSelect, disabled }: CandidateRowProp
         <TableCell className="text-xs">{candidate.employment_class.replace("_", " ")}</TableCell>
         <TableCell className="text-xs">{candidate.home_unit}</TableCell>
         <TableCell className="font-bold text-lg tabular-nums">
-          {candidate.score.toFixed(2)}
+          {Math.round(candidate.score * 100)}<span className="text-xs text-muted-foreground">/100</span>
         </TableCell>
         <TableCell>
           <ScoreBreakdown breakdown={candidate.score_breakdown} />
@@ -65,9 +65,9 @@ export function CandidateRow({ candidate, onSelect, disabled }: CandidateRowProp
       </TableRow>
       {expanded && (
         <TableRow>
-          <TableCell colSpan={8} className="bg-muted/30 text-sm italic">
-            {candidate.rationale}
-            <span className="ml-2 text-xs text-muted-foreground">
+          <TableCell colSpan={8} className="bg-muted/30 text-sm">
+            <div className="whitespace-pre-line">{candidate.rationale}</div>
+            <span className="text-xs text-muted-foreground">
               ({candidate.rationale_source})
             </span>
           </TableCell>

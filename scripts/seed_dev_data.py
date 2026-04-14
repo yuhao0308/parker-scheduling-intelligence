@@ -1,14 +1,13 @@
 """Seed the database with realistic Parker test data.
 
-Creates 12 units (4 subacute, 8 LT), ~30 staff, 1 week of schedule,
-hours ledger entries, and a few exclusions. Run against a local DB.
+Creates 12 units (4 subacute, 8 LT), ~26 staff, 1 month of schedule,
+hours ledger entries, callouts, and a few exclusions.
 
 Usage:
     python scripts/seed_dev_data.py
 """
 from __future__ import annotations
 
-import json
 import sys
 from datetime import date, datetime, timezone
 
@@ -24,7 +23,7 @@ def seed_units():
 
 
 def seed_staff():
-    """Seed ~30 staff members with varied profiles."""
+    """Seed ~26 staff members with varied profiles."""
     staff = [
         # Subacute RNs
         {"employee_id": "RN001", "name": "Maria Rodriguez", "license": "RN", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-SA1", "cross_trained_units": ["U-SA2"], "hire_date": "2019-03-15"},
@@ -65,23 +64,77 @@ def seed_staff():
 
 
 def seed_schedule():
-    """Seed a week of schedule entries."""
+    """Seed the full month of April 2026 with schedule entries."""
     entries = []
-    shifts = ["DAY", "EVENING", "NIGHT"]
 
-    # Staff scheduled for the week of Apr 7-11, 2026
+    # Staff assignments for 4 key units (realistic coverage)
     schedule_map = {
         # Subacute units — heavier staffing
-        "U-SA1": {"DAY": ["RN001", "CNA001", "CNA002", "PCT001"], "EVENING": ["RN003", "CNA001", "CNA005"], "NIGHT": ["RN001", "CNA002"]},
-        "U-SA2": {"DAY": ["RN002", "CNA003", "CNA004"], "EVENING": ["RN002", "CNA003"], "NIGHT": ["RN004", "CNA004"]},
+        "U-SA1": {
+            "DAY": ["RN001", "CNA001", "CNA002", "PCT001"],
+            "EVENING": ["RN003", "CNA001", "CNA005"],
+            "NIGHT": ["RN001", "CNA002"],
+        },
+        "U-SA2": {
+            "DAY": ["RN002", "CNA003", "CNA004"],
+            "EVENING": ["RN002", "CNA003"],
+            "NIGHT": ["RN004", "CNA004"],
+        },
         # LT units
-        "U-LT1": {"DAY": ["RN005", "CNA007", "CNA008"], "EVENING": ["LPN001", "CNA007"], "NIGHT": ["RN005", "CNA008"]},
-        "U-LT2": {"DAY": ["RN006", "CNA009", "CNA010"], "EVENING": ["RN006", "CNA009"], "NIGHT": ["LPN001", "CNA010"]},
+        "U-LT1": {
+            "DAY": ["RN005", "CNA007", "CNA008"],
+            "EVENING": ["LPN001", "CNA007"],
+            "NIGHT": ["RN005", "CNA008"],
+        },
+        "U-LT2": {
+            "DAY": ["RN006", "CNA009", "CNA010"],
+            "EVENING": ["RN006", "CNA009"],
+            "NIGHT": ["LPN001", "CNA010"],
+        },
     }
 
-    for d in range(7, 12):  # Apr 7-11
+    # Weekend alternative staffing (reduced)
+    weekend_map = {
+        "U-SA1": {
+            "DAY": ["RN001", "CNA001", "PCT001"],
+            "EVENING": ["RN003", "CNA005"],
+            "NIGHT": ["CNA002"],
+        },
+        "U-SA2": {
+            "DAY": ["RN002", "CNA003"],
+            "EVENING": ["CNA003"],
+            "NIGHT": ["RN004"],
+        },
+        "U-LT1": {
+            "DAY": ["RN005", "CNA007"],
+            "EVENING": ["CNA007"],
+            "NIGHT": ["CNA008"],
+        },
+        "U-LT2": {
+            "DAY": ["RN006", "CNA009"],
+            "EVENING": ["CNA009"],
+            "NIGHT": ["CNA010"],
+        },
+    }
+
+    # Cross-unit coverage demos: some days show SUBACUTE staff covering LT
+    cross_coverage = [
+        # Day 10: CNA001 (home=U-SA1 subacute) covers U-LT1 DAY shift
+        ("2026-04-10", "U-LT1", "DAY", "CNA001"),
+        # Day 15: CNA005 (home=U-SA3 subacute) covers U-LT2 EVENING
+        ("2026-04-15", "U-LT2", "EVENING", "CNA005"),
+        # Day 20: RN004 (home=U-SA3 subacute) covers U-LT1 NIGHT
+        ("2026-04-20", "U-LT1", "NIGHT", "RN004"),
+    ]
+
+    for d in range(1, 31):
         shift_date = f"2026-04-{d:02d}"
-        for unit_id, shift_staff in schedule_map.items():
+        dow = date(2026, 4, d).weekday()  # 0=Mon, 6=Sun
+        is_weekend = dow >= 5
+
+        active_map = weekend_map if is_weekend else schedule_map
+
+        for unit_id, shift_staff in active_map.items():
             for shift_label, emp_ids in shift_staff.items():
                 for emp_id in emp_ids:
                     entries.append({
@@ -92,8 +145,70 @@ def seed_schedule():
                         "is_published": True,
                     })
 
+    # Add cross-coverage entries
+    for shift_date, unit_id, shift_label, emp_id in cross_coverage:
+        entries.append({
+            "employee_id": emp_id,
+            "unit_id": unit_id,
+            "shift_date": shift_date,
+            "shift_label": shift_label,
+            "is_published": True,
+        })
+
     resp = httpx.post(f"{BASE_URL}/sync/schedule", json={"schedule_entries": entries})
     print(f"Schedule sync: {resp.status_code} — {resp.json()}")
+
+
+def seed_callouts():
+    """Seed callout records to create red slots on specific days."""
+    callouts = [
+        {
+            "employee_id": "CNA001",
+            "unit_id": "U-SA1",
+            "shift_date": "2026-04-08",
+            "shift_label": "DAY",
+            "reason": "Sick call",
+            "reported_at": "2026-04-08T06:30:00Z",
+        },
+        {
+            "employee_id": "CNA003",
+            "unit_id": "U-SA2",
+            "shift_date": "2026-04-14",
+            "shift_label": "EVENING",
+            "reason": "Family emergency",
+            "reported_at": "2026-04-14T12:00:00Z",
+        },
+        {
+            "employee_id": "CNA007",
+            "unit_id": "U-LT1",
+            "shift_date": "2026-04-17",
+            "shift_label": "DAY",
+            "reason": "Car trouble",
+            "reported_at": "2026-04-17T06:00:00Z",
+        },
+        {
+            "employee_id": "RN001",
+            "unit_id": "U-SA1",
+            "shift_date": "2026-04-22",
+            "shift_label": "NIGHT",
+            "reason": "Illness",
+            "reported_at": "2026-04-22T20:00:00Z",
+        },
+        {
+            "employee_id": "CNA009",
+            "unit_id": "U-LT2",
+            "shift_date": "2026-04-28",
+            "shift_label": "EVENING",
+            "reason": "Personal day",
+            "reported_at": "2026-04-28T10:00:00Z",
+        },
+    ]
+
+    resp = httpx.post(
+        f"{BASE_URL}/sync/schedule",
+        json={"callouts": callouts},
+    )
+    print(f"Callout sync: {resp.status_code} — {resp.json()}")
 
 
 def seed_hours():
@@ -110,7 +225,13 @@ def seed_hours():
         {"employee_id": "CNA008", "cycle_start_date": "2026-04-06", "hours_this_cycle": 24.75, "shift_count_this_biweek": 3},
         {"employee_id": "CNA009", "cycle_start_date": "2026-04-06", "hours_this_cycle": 16.5, "shift_count_this_biweek": 2},
         {"employee_id": "CNA010", "cycle_start_date": "2026-04-06", "hours_this_cycle": 24.75, "shift_count_this_biweek": 3},
+        {"employee_id": "CNA011", "cycle_start_date": "2026-04-06", "hours_this_cycle": 16.5, "shift_count_this_biweek": 2},
+        {"employee_id": "CNA012", "cycle_start_date": "2026-04-06", "hours_this_cycle": 0.0, "shift_count_this_biweek": 0},
+        {"employee_id": "CNA013", "cycle_start_date": "2026-04-06", "hours_this_cycle": 24.75, "shift_count_this_biweek": 3},
+        {"employee_id": "CNA014", "cycle_start_date": "2026-04-06", "hours_this_cycle": 16.5, "shift_count_this_biweek": 2},
+        {"employee_id": "CNA015", "cycle_start_date": "2026-04-06", "hours_this_cycle": 8.25, "shift_count_this_biweek": 1},
         {"employee_id": "PCT001", "cycle_start_date": "2026-04-06", "hours_this_cycle": 24.75, "shift_count_this_biweek": 3},
+        {"employee_id": "PCT002", "cycle_start_date": "2026-04-06", "hours_this_cycle": 8.25, "shift_count_this_biweek": 1},
         # RNs with biweekly tracking
         {"employee_id": "RN001", "cycle_start_date": "2026-03-30", "hours_this_cycle": 66.0, "shift_count_this_biweek": 8},
         {"employee_id": "RN002", "cycle_start_date": "2026-03-30", "hours_this_cycle": 49.5, "shift_count_this_biweek": 6},
@@ -119,6 +240,8 @@ def seed_hours():
         {"employee_id": "RN005", "cycle_start_date": "2026-03-30", "hours_this_cycle": 57.75, "shift_count_this_biweek": 7},
         {"employee_id": "RN006", "cycle_start_date": "2026-03-30", "hours_this_cycle": 41.25, "shift_count_this_biweek": 5},
         {"employee_id": "LPN001", "cycle_start_date": "2026-04-06", "hours_this_cycle": 33.0, "shift_count_this_biweek": 4},
+        {"employee_id": "LPN002", "cycle_start_date": "2026-04-06", "hours_this_cycle": 0.0, "shift_count_this_biweek": 0},
+        {"employee_id": "LPN003", "cycle_start_date": "2026-04-06", "hours_this_cycle": 24.75, "shift_count_this_biweek": 3},
     ]
 
     resp = httpx.post(f"{BASE_URL}/sync/hours", json={"records": records})
@@ -154,6 +277,7 @@ if __name__ == "__main__":
     print(f"Seeding against {BASE_URL}")
     seed_staff()
     seed_schedule()
+    seed_callouts()
     seed_hours()
     if "--test" in sys.argv:
         test_callout()

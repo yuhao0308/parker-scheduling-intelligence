@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  generateSchedule,
+  getMonthlySchedule,
   getRecentCallouts,
   getStaffForUnit,
   getUnits,
@@ -10,7 +12,12 @@ import {
   submitOverride,
   updateWeights,
 } from "./api";
-import type { CalloutRequest, OverrideRequest, ScoringWeights } from "./types";
+import type {
+  CalloutRequest,
+  GenerateScheduleRequest,
+  OverrideRequest,
+  ScoringWeights,
+} from "./types";
 
 export function useUnits() {
   return useQuery({
@@ -64,6 +71,24 @@ export function useUpdateWeights() {
     mutationFn: (payload: Partial<ScoringWeights>) => updateWeights(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["weights"] });
+    },
+  });
+}
+
+export function useMonthlySchedule(year: number, month: number) {
+  return useQuery({
+    queryKey: ["monthlySchedule", year, month],
+    queryFn: () => getMonthlySchedule(year, month),
+    staleTime: 30_000,
+  });
+}
+
+export function useGenerateSchedule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: GenerateScheduleRequest) => generateSchedule(req),
+    onSuccess: (_, req) => {
+      qc.invalidateQueries({ queryKey: ["monthlySchedule", req.year, req.month] });
     },
   });
 }

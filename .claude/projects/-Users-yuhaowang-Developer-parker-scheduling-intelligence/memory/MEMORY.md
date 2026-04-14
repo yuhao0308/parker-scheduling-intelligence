@@ -1,0 +1,2 @@
+- [Parker POC Context](project_context.md) — Decision-support tool for same-day call-out replacement at Parker healthcare facilities
+- [Standup 2026-04-13](standup_2026_04_13.md) — Scheduler priorities, Wednesday deadline, future leave feature noted

@@ -80,6 +80,47 @@ class MonthlyScheduleOut(BaseModel):
     days: List[DayScheduleOut]
 
 
+class WorkHoursSummaryOut(BaseModel):
+    employee_count: int
+    total_scheduled_hours: float
+    average_scheduled_hours: float
+    employees_near_ot: int
+    employees_in_ot: int
+    employees_high_ot: int
+    total_float_shifts: int
+
+
+class EmployeeWorkHoursOut(BaseModel):
+    employee_id: str
+    name: str
+    license: str
+    employment_class: str
+    home_unit_id: Optional[str] = None
+    current_cycle_hours: float
+    current_cycle_shifts: int
+    scheduled_hours: float
+    scheduled_shifts: int
+    peak_week_hours: float
+    projected_overtime_hours: float
+    peak_biweekly_shifts: int
+    projected_overtime_shifts: int
+    double_shift_days: int
+    home_unit_shifts: int
+    float_shifts: int
+    callout_count: int
+    primary_unit_id: Optional[str] = None
+    scheduled_unit_ids: List[str] = []
+    overtime_status: str
+    overtime_detail: str
+
+
+class WorkHoursSnapshotOut(BaseModel):
+    year: int
+    month: int
+    summary: WorkHoursSummaryOut
+    employees: List[EmployeeWorkHoursOut]
+
+
 class GenerateScheduleRequest(BaseModel):
     year: int
     month: int

@@ -18,12 +18,14 @@ from app.models.unit import Unit
 from app.schemas.schedule import (
     AssignedEmployeeOut,
     DayScheduleOut,
+    WorkHoursSnapshotOut,
     GenerateScheduleRequest,
     MonthlyScheduleOut,
     ScheduleGenerationResult,
     ShiftSlotOut,
 )
 from app.services.scheduler import generate_monthly_schedule
+from app.services.workload import build_work_hours_snapshot
 
 router = APIRouter(tags=["schedule"])
 
@@ -137,3 +139,13 @@ async def generate_schedule(
         settings=settings,
         staff_count_override=req.staff_count_override,
     )
+
+
+@router.get("/schedule/work-hours", response_model=WorkHoursSnapshotOut)
+async def get_work_hours_snapshot(
+    year: int = Query(...),
+    month: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+) -> WorkHoursSnapshotOut:
+    """Return a monthly staffing workload snapshot for all active employees."""
+    return await build_work_hours_snapshot(db=db, year=year, month=month)

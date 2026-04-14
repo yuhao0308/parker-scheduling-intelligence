@@ -10,6 +10,7 @@ import type {
   ScoringWeights,
   StaffOut,
   UnitOut,
+  WorkHoursSnapshot,
 } from "./types";
 
 const BASE = "/api";
@@ -60,6 +61,9 @@ export const updateWeights = (payload: Partial<ScoringWeights>) =>
 
 export const getMonthlySchedule = (year: number, month: number) =>
   request<MonthlySchedule>(`/schedule/monthly?year=${year}&month=${month}`);
+
+export const getWorkHoursSnapshot = (year: number, month: number) =>
+  request<WorkHoursSnapshot>(`/schedule/work-hours?year=${year}&month=${month}`);
 
 export const generateSchedule = (req: GenerateScheduleRequest) =>
   post<GenerateScheduleResult>("/schedule/generate", req);

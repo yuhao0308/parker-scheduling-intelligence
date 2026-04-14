@@ -8,6 +8,7 @@ import {
   getStaffForUnit,
   getUnits,
   getWeights,
+  getWorkHoursSnapshot,
   submitCallout,
   submitOverride,
   updateWeights,
@@ -36,8 +37,16 @@ export function useStaffForUnit(unitId: string | null) {
 }
 
 export function useSubmitCallout() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: CalloutRequest) => submitCallout(req),
+    onSuccess: (_, req) => {
+      const [year, month] = req.shift_date.split("-").map(Number);
+      if (year && month) {
+        qc.invalidateQueries({ queryKey: ["workHours", year, month] });
+        qc.invalidateQueries({ queryKey: ["monthlySchedule", year, month] });
+      }
+    },
   });
 }
 
@@ -71,6 +80,7 @@ export function useUpdateWeights() {
     mutationFn: (payload: Partial<ScoringWeights>) => updateWeights(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["weights"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -83,12 +93,27 @@ export function useMonthlySchedule(year: number, month: number) {
   });
 }
 
+export function useWorkHoursSnapshot(
+  year: number,
+  month: number,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["workHours", year, month],
+    queryFn: () => getWorkHoursSnapshot(year, month),
+    staleTime: 15_000,
+    enabled,
+    refetchInterval: enabled ? 15_000 : false,
+  });
+}
+
 export function useGenerateSchedule() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: GenerateScheduleRequest) => generateSchedule(req),
     onSuccess: (_, req) => {
       qc.invalidateQueries({ queryKey: ["monthlySchedule", req.year, req.month] });
+      qc.invalidateQueries({ queryKey: ["workHours", req.year, req.month] });
     },
   });
 }

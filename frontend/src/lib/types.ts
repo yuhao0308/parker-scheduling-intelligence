@@ -135,6 +135,47 @@ export interface MonthlySchedule {
   days: DaySchedule[];
 }
 
+export interface WorkHoursSummary {
+  employee_count: number;
+  total_scheduled_hours: number;
+  average_scheduled_hours: number;
+  employees_near_ot: number;
+  employees_in_ot: number;
+  employees_high_ot: number;
+  total_float_shifts: number;
+}
+
+export interface EmployeeWorkHours {
+  employee_id: string;
+  name: string;
+  license: LicenseType;
+  employment_class: EmploymentClass;
+  home_unit_id: string | null;
+  current_cycle_hours: number;
+  current_cycle_shifts: number;
+  scheduled_hours: number;
+  scheduled_shifts: number;
+  peak_week_hours: number;
+  projected_overtime_hours: number;
+  peak_biweekly_shifts: number;
+  projected_overtime_shifts: number;
+  double_shift_days: number;
+  home_unit_shifts: number;
+  float_shifts: number;
+  callout_count: number;
+  primary_unit_id: string | null;
+  scheduled_unit_ids: string[];
+  overtime_status: "healthy" | "near_ot" | "overtime" | "high_ot";
+  overtime_detail: string;
+}
+
+export interface WorkHoursSnapshot {
+  year: number;
+  month: number;
+  summary: WorkHoursSummary;
+  employees: EmployeeWorkHours[];
+}
+
 export interface GenerateScheduleRequest {
   year: number;
   month: number;

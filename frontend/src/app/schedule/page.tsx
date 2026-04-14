@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -16,6 +16,7 @@ import { MonthCalendar } from "@/components/month-calendar";
 import { ShiftDetailDialog } from "@/components/shift-detail-dialog";
 import { useMonthlySchedule, useGenerateSchedule, useUnits } from "@/lib/queries";
 import type { ShiftSlot } from "@/lib/types";
+import { useWorkHoursMonitor } from "@/providers/work-hours-provider";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -35,6 +36,7 @@ export default function SchedulePage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [scenarioIdx, setScenarioIdx] = useState(0);
+  const { setScope } = useWorkHoursMonitor();
 
   const { data, isLoading } = useMonthlySchedule(year, month);
   const generateMutation = useGenerateSchedule();
@@ -69,6 +71,10 @@ export default function SchedulePage() {
       },
     );
   }
+
+  useEffect(() => {
+    setScope({ year, month });
+  }, [month, year, setScope]);
 
   // Count statuses for summary
   const statusCounts = { assigned: 0, unassigned: 0, callout: 0 };

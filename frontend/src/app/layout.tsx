@@ -2,8 +2,10 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/providers/query-provider";
+import { WorkHoursProvider } from "@/providers/work-hours-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "@/components/app-sidebar";
+import { WorkHoursMonitor } from "@/components/work-hours-monitor";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,10 +34,13 @@ export default function RootLayout({
     >
       <body className="min-h-full flex">
         <QueryProvider>
-          <TooltipProvider>
-            <AppSidebar />
-            <main className="flex-1 p-6 overflow-auto">{children}</main>
-          </TooltipProvider>
+          <WorkHoursProvider>
+            <TooltipProvider>
+              <AppSidebar />
+              <main className="flex-1 p-6 overflow-auto">{children}</main>
+              <WorkHoursMonitor />
+            </TooltipProvider>
+          </WorkHoursProvider>
         </QueryProvider>
       </body>
     </html>

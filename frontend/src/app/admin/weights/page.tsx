@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { useWeights, useUpdateWeights } from "@/lib/queries";
 import type { ScoringWeights } from "@/lib/types";
@@ -21,16 +20,11 @@ const weightLabels: Record<string, string> = {
 export default function WeightsPage() {
   const { data: weights, isLoading, isError, error } = useWeights();
   const updateMutation = useUpdateWeights();
-  const [draft, setDraft] = useState<ScoringWeights | null>(null);
-
-  useEffect(() => {
-    if (weights && !draft) {
-      setDraft(structuredClone(weights));
-    }
-  }, [weights, draft]);
+  const [draftState, setDraft] = useState<ScoringWeights | null>(null);
 
   if (isLoading) return <div className="p-8 text-muted-foreground">Loading weights...</div>;
   if (isError) return <div className="p-8 text-destructive">{error.message}</div>;
+  const draft = draftState ?? (weights ? structuredClone(weights) : null);
   if (!draft) return null;
 
   const weightSum = Object.values(draft.weights).reduce((a, b) => a + b, 0);
@@ -82,9 +76,7 @@ export default function WeightsPage() {
   }
 
   function handleReset() {
-    if (weights) {
-      setDraft(structuredClone(weights));
-    }
+    setDraft(null);
   }
 
   return (

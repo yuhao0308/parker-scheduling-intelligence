@@ -44,7 +44,9 @@ from app.services.scoring import (
     ScoreResult,
     ScoringConfig,
     compute_clinical_fit,
+    compute_equity_score,
     compute_float_penalty,
+    compute_seniority_score,
     load_scoring_config,
     score_candidate,
 )
@@ -54,7 +56,9 @@ from app.services.staff_loader import (
     build_schedule_context,
     load_exclusions,
     load_hours_map,
+    load_last_shift_dates,
     load_staff_pool,
+    load_unit_minimums,
 )
 
 logger = structlog.get_logger()
@@ -92,6 +96,7 @@ async def generate_recommendations(
     candidates = build_candidate_records(staff_list)
 
     # 7. Run hard filters
+    unit_min_licensed, unit_min_certified = await load_unit_minimums(db)
     filter_result = apply_hard_filters(
         candidates=candidates,
         required_license=required_license,
@@ -100,6 +105,8 @@ async def generate_recommendations(
         target_unit_id=callout.unit_id,
         target_date=callout.shift_date,
         target_label=callout.shift_label,
+        unit_min_licensed=unit_min_licensed,
+        unit_min_certified=unit_min_certified,
     )
 
     logger.info(
@@ -112,6 +119,7 @@ async def generate_recommendations(
     # 8. Score each surviving candidate
     scored = []
     hours_map = await load_hours_map(db)
+    last_shift_map = await load_last_shift_dates(db, callout.shift_date)
 
     for cand in filter_result.passed:
         # OT headroom
@@ -157,6 +165,27 @@ async def generate_recommendations(
             config=scoring_config,
         )
 
+        # Seniority (tenure-based)
+        seniority = compute_seniority_score(
+            hire_date=cand.hire_date,
+            reference_date=callout.shift_date,
+            saturation_years=scoring_config.seniority_saturation_years,
+        )
+
+        # Equity / dormancy — surface idle per-diem staff
+        last_shift = last_shift_map.get(cand.employee_id)
+        days_since_last = (callout.shift_date - last_shift).days if last_shift else None
+        equity = compute_equity_score(
+            employment_class=cand.employment_class,
+            days_since_last_shift=days_since_last,
+            threshold_days=scoring_config.dormancy_threshold_days,
+        )
+
+        # Willingness — historically LOW weight per spec. Defaults to a
+        # neutral baseline of 0.5 until acceptance history accrues via the
+        # HITL override pipeline (app/routes/overrides.py).
+        willingness = 0.5
+
         # Score
         result = score_candidate(
             ot_headroom=ot_headroom,
@@ -164,6 +193,9 @@ async def generate_recommendations(
             clinical_fit=clin_fit,
             float_penalty=float_pen,
             weights=scoring_config.weights,
+            seniority=seniority,
+            equity=equity,
+            willingness=willingness,
         )
 
         # Build OT description for rationale
@@ -173,6 +205,17 @@ async def generate_recommendations(
 
         # Clinical fit description
         clin_desc = _clinical_fit_description(cand, callout.unit_id, target_typology)
+
+        # Voluntary-OT-only guard (NY Labor Law §167 family).
+        # When enabled, we eliminate any candidate whose selection would
+        # trigger premium OT — forcing them to accept would constitute
+        # mandatory overtime. They can still be surfaced via an explicit
+        # shadow-mode bypass; the default pipeline drops them.
+        if settings.voluntary_ot_only and would_trigger_ot:
+            filter_result.stats["voluntary_ot_only"] = (
+                filter_result.stats.get("voluntary_ot_only", 0) + 1
+            )
+            continue
 
         scored.append((cand, result, dist_miles, would_trigger_ot, ot_desc, clin_desc))
 
@@ -231,6 +274,9 @@ async def generate_recommendations(
                     proximity=res.proximity,
                     clinical_fit=res.clinical_fit,
                     float_penalty=res.float_penalty,
+                    seniority=res.seniority,
+                    equity=res.equity,
+                    willingness=res.willingness,
                     total=res.total,
                 ),
                 rationale=rationales[i] if i < len(rationales) else "",

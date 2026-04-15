@@ -1,13 +1,18 @@
 weights:
-  overtime_headroom: 0.50    # Sean: "top of the priority" — biggest financial lever
-  clinical_fit: 0.30         # short- vs long-term unit training match
-  float_penalty: 0.15        # protect home-unit staffing + new hires
+  overtime_headroom: 0.45    # Sean: "top of the priority" — biggest financial lever
+  clinical_fit: 0.22         # short- vs long-term unit training match
+  float_penalty: 0.13        # protect home-unit staffing + new hires
   proximity: 0.05            # tiebreaker only — not a client-confirmed signal
+  seniority: 0.08            # tenure / clinical experience
+  equity: 0.05               # surface under-used staff (dormancy boost)
+  willingness: 0.02          # historical acceptance — deliberately low per spec
 
 thresholds:
   max_relevant_distance_miles: 30
   max_candidates_returned: 10
   new_hire_months: 6         # tenure threshold for amplified float penalty
+  seniority_saturation_years: 10  # tenure where seniority signal saturates to 1.0
+  dormancy_threshold_days: 30     # per-diem idle >30 days triggers equity boost
 
 clinical_fit_scores:
   exact_match: 1.0           # home unit or cross-trained for target typology

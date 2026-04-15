@@ -25,6 +25,9 @@ class ScoringWeights:
     proximity: float
     clinical_fit: float
     float_penalty: float
+    seniority: float = 0.0
+    equity: float = 0.0
+    willingness: float = 0.0
 
 
 @dataclass
@@ -35,6 +38,8 @@ class ScoringConfig:
     new_hire_months: int
     clinical_fit_scores: dict[str, float]
     float_penalty_values: dict[str, float]
+    seniority_saturation_years: float = 10.0
+    dormancy_threshold_days: int = 30
 
 
 def load_scoring_config(path: Path) -> ScoringConfig:
@@ -42,14 +47,51 @@ def load_scoring_config(path: Path) -> ScoringConfig:
     with open(path) as f:
         raw = yaml.safe_load(f)
 
+    thresholds = raw["thresholds"]
     return ScoringConfig(
         weights=ScoringWeights(**raw["weights"]),
-        max_relevant_distance_miles=raw["thresholds"]["max_relevant_distance_miles"],
-        max_candidates_returned=raw["thresholds"]["max_candidates_returned"],
-        new_hire_months=raw["thresholds"]["new_hire_months"],
+        max_relevant_distance_miles=thresholds["max_relevant_distance_miles"],
+        max_candidates_returned=thresholds["max_candidates_returned"],
+        new_hire_months=thresholds["new_hire_months"],
         clinical_fit_scores=raw["clinical_fit_scores"],
         float_penalty_values=raw["float_penalty_values"],
+        seniority_saturation_years=thresholds.get("seniority_saturation_years", 10.0),
+        dormancy_threshold_days=thresholds.get("dormancy_threshold_days", 30),
     )
+
+
+def compute_seniority_score(
+    hire_date: date, reference_date: date, saturation_years: float
+) -> float:
+    """Linearly scale tenure from 0 to 1 up to a saturation horizon."""
+    if saturation_years <= 0:
+        return 0.0
+    tenure_years = max(0.0, (reference_date - hire_date).days / 365.25)
+    return min(1.0, tenure_years / saturation_years)
+
+
+def compute_equity_score(
+    employment_class: str,
+    days_since_last_shift: int | None,
+    threshold_days: int,
+) -> float:
+    """Surface dormant per-diem / contingent staff.
+
+    Returns a 0..1 boost that is only non-zero once an eligible employee has
+    been idle past `threshold_days`. Full-time / part-time staff do not receive
+    the dormancy boost — the spec targets contingent workers sitting idle on
+    the roster while full-timers accumulate overtime.
+    """
+    if employment_class != "PER_DIEM":
+        return 0.0
+    if days_since_last_shift is None:
+        # Never worked — maximum dormancy boost so scheduler sees them.
+        return 1.0
+    if days_since_last_shift <= threshold_days:
+        return 0.0
+    # Ramp from 0 at threshold to 1 at 2x threshold.
+    ratio = (days_since_last_shift - threshold_days) / float(threshold_days)
+    return min(1.0, ratio)
 
 
 @dataclass
@@ -59,6 +101,9 @@ class ScoreResult:
     clinical_fit: float
     float_penalty: float
     total: float
+    seniority: float = 0.0
+    equity: float = 0.0
+    willingness: float = 0.0
 
 
 def compute_clinical_fit(
@@ -134,6 +179,9 @@ def score_candidate(
     clinical_fit: float,
     float_penalty: float,
     weights: ScoringWeights,
+    seniority: float = 0.0,
+    equity: float = 0.0,
+    willingness: float = 0.0,
 ) -> ScoreResult:
     """Compute the weighted score for a candidate."""
     total = (
@@ -141,6 +189,9 @@ def score_candidate(
         + weights.proximity * proximity
         + weights.clinical_fit * clinical_fit
         - weights.float_penalty * float_penalty
+        + weights.seniority * seniority
+        + weights.equity * equity
+        + weights.willingness * willingness
     )
 
     return ScoreResult(
@@ -148,5 +199,8 @@ def score_candidate(
         proximity=round(proximity, 4),
         clinical_fit=round(clinical_fit, 4),
         float_penalty=round(float_penalty, 4),
+        seniority=round(seniority, 4),
+        equity=round(equity, 4),
+        willingness=round(willingness, 4),
         total=round(total, 4),
     )

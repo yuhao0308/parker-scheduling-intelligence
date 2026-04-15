@@ -39,6 +39,11 @@ class ScheduleContext:
     employees_on_pto: set[str]
     # employee_ids already scheduled for the target shift
     employees_scheduled: set[str]
+    # (unit_id, shift_date, shift_label) -> license bucket counts for staff
+    # currently rostered on that unit/shift. Used for coverage-floor filtering.
+    unit_shift_license_counts: dict[tuple[str, date, ShiftLabel], dict[LicenseType, int]] = field(
+        default_factory=dict
+    )
 
 
 @dataclass
@@ -127,6 +132,60 @@ def filter_rest_window(
     return passed, filtered
 
 
+def filter_source_unit_coverage(
+    candidates: list[CandidateRecord],
+    schedule: ScheduleContext,
+    target_unit_id: str,
+    target_date: date,
+    target_label: ShiftLabel,
+    unit_min_licensed: dict[str, int],
+    unit_min_certified: dict[str, int],
+) -> tuple[list[CandidateRecord], int]:
+    """Protect source unit minimums when pulling a floater.
+
+    If a candidate is currently rostered on their home unit for the same
+    shift as the open call-out, pulling them would drop their home unit
+    below the regulatory minimum. These candidates are eliminated.
+
+    Staff who are NOT currently scheduled on the target shift (the typical
+    pickup case) pass through — they are not being removed from anywhere.
+    """
+    passed: list[CandidateRecord] = []
+    filtered = 0
+    for c in candidates:
+        if c.home_unit_id == target_unit_id:
+            passed.append(c)
+            continue
+
+        # Is this candidate rostered on their home unit for the callout shift?
+        rostered_on_home = False
+        for sd, sl in schedule.employee_shifts.get(c.employee_id, []):
+            if sd == target_date and sl == target_label:
+                rostered_on_home = True
+                break
+        if not rostered_on_home:
+            passed.append(c)
+            continue
+
+        counts = schedule.unit_shift_license_counts.get(
+            (c.home_unit_id, target_date, target_label), {}
+        )
+        licensed_count = sum(counts.get(l, 0) for l in LICENSED_ROLES)
+        certified_count = sum(counts.get(l, 0) for l in CERTIFIED_ROLES)
+
+        min_lic = unit_min_licensed.get(c.home_unit_id, 1)
+        min_cert = unit_min_certified.get(c.home_unit_id, 0)
+
+        if c.license in LICENSED_ROLES and (licensed_count - 1) < min_lic:
+            filtered += 1
+            continue
+        if c.license in CERTIFIED_ROLES and (certified_count - 1) < min_cert:
+            filtered += 1
+            continue
+        passed.append(c)
+    return passed, filtered
+
+
 def apply_hard_filters(
     candidates: list[CandidateRecord],
     required_license: LicenseType,
@@ -135,6 +194,8 @@ def apply_hard_filters(
     target_unit_id: str,
     target_date: date,
     target_label: ShiftLabel,
+    unit_min_licensed: dict[str, int] | None = None,
+    unit_min_certified: dict[str, int] | None = None,
 ) -> FilterResult:
     """Run all hard filters in sequence. Returns surviving candidates + stats."""
     total = len(candidates)
@@ -156,5 +217,18 @@ def apply_hard_filters(
     pool, n = filter_rest_window(pool, schedule, target_date, target_label)
     if n:
         stats["rest_window_violation"] = n
+
+    if unit_min_licensed is not None and unit_min_certified is not None:
+        pool, n = filter_source_unit_coverage(
+            pool,
+            schedule,
+            target_unit_id,
+            target_date,
+            target_label,
+            unit_min_licensed,
+            unit_min_certified,
+        )
+        if n:
+            stats["source_unit_coverage_floor"] = n
 
     return FilterResult(passed=pool, stats=stats, total_pool=total)

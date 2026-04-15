@@ -27,7 +27,28 @@ from app.schemas.schedule import (
     PTOSyncRecord,
     ScheduleEntrySyncRecord,
 )
+from app.schemas.common import EmploymentClass as CommonEmploymentClass, LicenseType as CommonLicenseType
 from app.schemas.staff import StaffSyncRecord, SyncResult
+
+
+class InvalidStaffRecordError(ValueError):
+    """Raised when a staff record violates a classification invariant."""
+
+
+def _validate_employment_class(rec: StaffSyncRecord) -> None:
+    """Enforce taxonomy invariants for staff classification.
+
+    Per Parker spec: LPNs are employed only on a full-time or part-time basis.
+    RNs, CNAs, and PCTs may be per-diem; LPNs may not.
+    """
+    if (
+        rec.license == CommonLicenseType.LPN
+        and rec.employment_class == CommonEmploymentClass.PER_DIEM
+    ):
+        raise InvalidStaffRecordError(
+            f"LPN {rec.employee_id} cannot be per-diem — "
+            "LPNs are exclusively full-time or part-time"
+        )
 
 
 async def sync_staff(
@@ -38,6 +59,7 @@ async def sync_staff(
     updated = 0
 
     for rec in records:
+        _validate_employment_class(rec)
         existing = await db.get(StaffMaster, rec.employee_id)
         if existing:
             existing.name = rec.name

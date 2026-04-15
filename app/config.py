@@ -32,5 +32,18 @@ class Settings(BaseSettings):
     # Facility
     facility_zip_code: str = "11375"
 
+    # Labor compliance
+    # NY Labor Law §167 / similar state-level mandatory-OT prohibitions:
+    # when enabled, candidates whose acceptance would trigger overtime are
+    # eliminated outright to guarantee replacements are voluntary-only.
+    voluntary_ot_only: bool = True
+
+    # UKG / WFM write-back (OAuth 2.0 client credentials)
+    ukg_base_url: str = ""
+    ukg_token_endpoint: str = ""
+    ukg_client_id: str = ""
+    ukg_client_secret: str = ""
+    ukg_write_back_enabled: bool = False
+
 
 settings = Settings()

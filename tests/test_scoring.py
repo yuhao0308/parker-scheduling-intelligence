@@ -143,10 +143,10 @@ class TestScoreCandidate:
         """OT headroom difference should translate directly to score delta."""
         big_ot = score_candidate(1.0, 0.5, 0.5, 0.3, weights)
         no_ot = score_candidate(0.0, 0.5, 0.5, 0.3, weights)
-        assert big_ot.total - no_ot.total == pytest.approx(0.50)
+        assert big_ot.total - no_ot.total == pytest.approx(weights.overtime_headroom)
 
     def test_ot_beats_clinical_and_proximity_combined(self, weights):
-        """With OT at 0.50 and clinical+proximity at 0.35, OT must win head-to-head."""
+        """OT dominates over clinical + proximity alone."""
         ot_champ = score_candidate(1.0, 0.0, 0.0, 0.0, weights)
         other_champ = score_candidate(0.0, 1.0, 1.0, 0.0, weights)
         assert ot_champ.total > other_champ.total
@@ -156,13 +156,16 @@ class TestScoreCandidate:
         float_pen = score_candidate(0.5, 0.5, 0.5, 1.0, weights)
         assert no_float.total > float_pen.total
 
-    def test_weights_sum_to_one(self, weights):
+    def test_positive_weights_sum_to_one(self, weights):
         """Positive-signal weights must sum to 1.0 for interpretable scores."""
         total = (
             weights.overtime_headroom
             + weights.proximity
             + weights.clinical_fit
             + weights.float_penalty
+            + weights.seniority
+            + weights.equity
+            + weights.willingness
         )
         assert total == pytest.approx(1.0)
 
@@ -170,7 +173,10 @@ class TestScoreCandidate:
 class TestLoadScoringConfig:
     def test_loads_yaml(self):
         config = load_scoring_config(Path("config/scoring_weights.yaml"))
-        assert config.weights.overtime_headroom == 0.50
+        assert config.weights.overtime_headroom == 0.45
         assert config.weights.proximity == 0.05
+        assert config.weights.seniority == 0.08
+        assert config.weights.equity == 0.05
+        assert config.weights.willingness == 0.02
         assert config.max_relevant_distance_miles == 30
         assert config.clinical_fit_scores["lt_to_subacute"] == 0.0

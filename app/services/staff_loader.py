@@ -93,13 +93,27 @@ async def build_schedule_context(
 
     employee_shifts: dict[str, list[tuple[date, ShiftLabel]]] = {}
     employees_scheduled: set[str] = set()
+    unit_shift_license_counts: dict[
+        tuple[str, date, ShiftLabel], dict[LicenseType, int]
+    ] = {}
+
+    # Lazy staff license lookup for coverage counts
+    staff_license_rows = await db.execute(select(StaffMaster.employee_id, StaffMaster.license))
+    staff_license_map: dict[str, LicenseType] = {
+        eid: LicenseType(lic.value) for eid, lic in staff_license_rows.all()
+    }
 
     for e in entries:
-        employee_shifts.setdefault(e.employee_id, []).append(
-            (e.shift_date, ShiftLabel(e.shift_label.value))
-        )
-        if e.shift_date == target_date and e.shift_label.value == target_label.value:
+        label = ShiftLabel(e.shift_label.value)
+        employee_shifts.setdefault(e.employee_id, []).append((e.shift_date, label))
+        if e.shift_date == target_date and label == target_label:
             employees_scheduled.add(e.employee_id)
+
+        lic = staff_license_map.get(e.employee_id)
+        if lic is not None:
+            key = (e.unit_id, e.shift_date, label)
+            bucket = unit_shift_license_counts.setdefault(key, {})
+            bucket[lic] = bucket.get(lic, 0) + 1
 
     pto_result = await db.execute(
         select(PTOEntry).where(
@@ -113,7 +127,34 @@ async def build_schedule_context(
         employee_shifts=employee_shifts,
         employees_on_pto=employees_on_pto,
         employees_scheduled=employees_scheduled,
+        unit_shift_license_counts=unit_shift_license_counts,
     )
+
+
+async def load_unit_minimums(
+    db: AsyncSession,
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Load per-unit regulatory minimums derived from typology.
+
+    Per Parker spec:
+      - Long-Term units: >=1 licensed nurse per shift
+      - Short-Term (SUBACUTE) units: >=2 licensed nurses per shift
+      - Certified staff: ratio approx 1 CNA per 10 residents (baseline 4 CNAs
+        for a 40-resident unit). Stored on Unit.required_ratio (staff count).
+    """
+    result = await db.execute(select(Unit))
+    min_licensed: dict[str, int] = {}
+    min_certified: dict[str, int] = {}
+    for u in result.scalars().all():
+        typ = u.typology.value if hasattr(u.typology, "value") else u.typology
+        min_licensed[u.unit_id] = 2 if typ == "SUBACUTE" else 1
+        # required_ratio is expected to hold the baseline CNA count per shift
+        # (e.g. 4 for a 40-resident unit). Default to 4 if unset.
+        try:
+            min_certified[u.unit_id] = int(u.required_ratio) if u.required_ratio else 4
+        except (TypeError, ValueError):
+            min_certified[u.unit_id] = 4
+    return min_licensed, min_certified
 
 
 async def load_exclusions(
@@ -134,6 +175,20 @@ async def load_exclusions(
             )
         )
     return exclusions
+
+
+async def load_last_shift_dates(
+    db: AsyncSession, as_of: date
+) -> dict[str, date]:
+    """Return the most recent shift_date strictly before `as_of` per employee."""
+    from sqlalchemy import func
+
+    result = await db.execute(
+        select(ScheduleEntry.employee_id, func.max(ScheduleEntry.shift_date))
+        .where(ScheduleEntry.shift_date < as_of)
+        .group_by(ScheduleEntry.employee_id)
+    )
+    return {row[0]: row[1] for row in result.all() if row[1] is not None}
 
 
 async def load_hours_map(db: AsyncSession) -> dict[str, HoursLedger]:

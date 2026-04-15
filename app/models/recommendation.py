@@ -36,5 +36,9 @@ class OverrideLog(Base):
     )
     selected_rank: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     override_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Structured feedback tag for HITL -> ML training pipeline. The free-text
+    # override_reason stays for nuance; the tag gives us a clean categorical
+    # signal for future reinforcement-learning reward shaping.
+    feedback_tag: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     coordinator_id: Mapped[str] = mapped_column(String(100))
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))

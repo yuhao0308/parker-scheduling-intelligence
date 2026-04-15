@@ -13,6 +13,9 @@ class ScoreBreakdown(BaseModel):
     clinical_fit: float
     float_penalty: float
     total: float
+    seniority: float = 0.0
+    equity: float = 0.0
+    willingness: float = 0.0
 
 
 class ScoredCandidate(BaseModel):

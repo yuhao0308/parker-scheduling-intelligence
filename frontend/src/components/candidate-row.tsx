@@ -67,9 +67,6 @@ export function CandidateRow({ candidate, onSelect, disabled }: CandidateRowProp
         <TableRow>
           <TableCell colSpan={8} className="bg-muted/30 text-sm">
             <div className="whitespace-pre-line">{candidate.rationale}</div>
-            <span className="text-xs text-muted-foreground">
-              ({candidate.rationale_source})
-            </span>
           </TableCell>
         </TableRow>
       )}

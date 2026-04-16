@@ -14,7 +14,15 @@ from app.services.recommendation import generate_recommendations
 router = APIRouter(tags=["callout"])
 
 
-@router.post("/callouts", response_model=CalloutResponse)
+@router.post(
+    "/callouts",
+    response_model=CalloutResponse,
+    summary="Report a callout and rank replacement candidates",
+    description=(
+        "Creates a callout record, runs the recommendation pipeline, and returns "
+        "ranked candidates with scoring details and filter statistics."
+    ),
+)
 async def create_callout(
     request: CalloutRequest,
     db: AsyncSession = Depends(get_db),

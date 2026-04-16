@@ -1,7 +1,7 @@
 """Tests for rationale generation — LLM and template fallback."""
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -71,7 +71,10 @@ class TestGenerateRationales:
         settings = Settings(ollama_model="qwen3.5:9b")
         candidates = [_make_signal(rank=1), _make_signal(rank=2, name="James T.")]
 
-        with patch("ollama.chat", side_effect=Exception("Connection refused")):
+        with patch(
+            "ollama.AsyncClient.chat",
+            new=AsyncMock(side_effect=Exception("Connection refused")),
+        ):
             rationales, source = await generate_rationales(
                 candidates, "U-SA1", "SUBACUTE", "DAY", "2026-04-09", settings
             )
@@ -106,7 +109,7 @@ class TestGenerateRationales:
             '- Distance: 3.2 miles from facility"}]}'
         )
 
-        with patch("ollama.chat", return_value=mock_response):
+        with patch("ollama.AsyncClient.chat", new=AsyncMock(return_value=mock_response)):
             rationales, source = await generate_rationales(
                 candidates, "U-SA1", "SUBACUTE", "DAY", "2026-04-09", settings
             )
@@ -114,3 +117,28 @@ class TestGenerateRationales:
         assert source == "llm"
         assert len(rationales) == 1
         assert rationales[0].startswith("- Hours:")
+
+    @pytest.mark.asyncio
+    async def test_llm_distance_is_overwritten_with_computed_value(self):
+        settings = Settings(ollama_model="qwen3.5:9b")
+        candidates = [_make_signal(rank=1)]
+
+        mock_response = MagicMock()
+        mock_response.message.content = (
+            '{"candidates": [{"rank": 1, "rationale": '
+            '"- Hours: 6.0h of straight time remaining this week\\n'
+            '- Experience: CNA — Home unit match\\n'
+            '- Distance: 0.0 miles from facility"}]}'
+        )
+
+        with patch("ollama.AsyncClient.chat", new=AsyncMock(return_value=mock_response)):
+            rationales, source = await generate_rationales(
+                candidates, "U-SA1", "SUBACUTE", "DAY", "2026-04-09", settings
+            )
+
+        assert source == "llm"
+        assert rationales == [
+            "- Hours: 6.0h of straight time remaining this week\n"
+            "- Experience: CNA — Home unit match\n"
+            "- Distance: 3.2 miles from facility"
+        ]

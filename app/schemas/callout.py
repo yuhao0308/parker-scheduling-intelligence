@@ -4,7 +4,7 @@ import enum
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.schemas.candidate import FilterStats, ScoredCandidate
 from app.schemas.common import ShiftLabel
@@ -30,6 +30,17 @@ class CalloutRequest(BaseModel):
     shift_date: date
     shift_label: ShiftLabel
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "callout_employee_id": "CNA100",
+                "unit_id": "U-SA1",
+                "shift_date": "2026-04-14",
+                "shift_label": "DAY",
+            }
+        }
+    )
+
 
 class CalloutResponse(BaseModel):
     callout_id: int
@@ -41,6 +52,49 @@ class CalloutResponse(BaseModel):
     candidates: List[ScoredCandidate]
     filter_stats: FilterStats
     generated_at: datetime
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "callout_id": 12,
+                "recommendation_log_id": 34,
+                "unit_id": "U-SA1",
+                "unit_name": "Subacute Unit 1",
+                "shift_date": "2026-04-14",
+                "shift_label": "DAY",
+                "candidates": [
+                    {
+                        "rank": 1,
+                        "employee_id": "CNA101",
+                        "name": "Maria Santos",
+                        "license": "CNA",
+                        "employment_class": "FT",
+                        "home_unit": "U-SA1",
+                        "score": 0.94,
+                        "score_breakdown": {
+                            "overtime_headroom": 1.0,
+                            "proximity": 0.89,
+                            "clinical_fit": 1.0,
+                            "float_penalty": 0.0,
+                            "total": 0.9445,
+                        },
+                        "rationale": "- Hours: 29.3h of straight time remaining this week\n- Experience: CNA — Home unit match\n- Distance: 3.2 miles from facility",
+                        "rationale_source": "template",
+                    }
+                ],
+                "filter_stats": {
+                    "total_pool": 18,
+                    "passed_filter": 4,
+                    "filtered_out": {
+                        "license_mismatch": 10,
+                        "already_scheduled_or_pto": 2,
+                        "rest_window_violation": 2,
+                    },
+                },
+                "generated_at": "2026-04-14T10:15:00Z",
+            }
+        }
+    )
 
 
 class OverrideRequest(BaseModel):

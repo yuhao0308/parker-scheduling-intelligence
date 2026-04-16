@@ -32,7 +32,15 @@ router = APIRouter(tags=["schedule"])
 SHIFT_LABELS = ["DAY", "EVENING", "NIGHT"]
 
 
-@router.get("/schedule/monthly", response_model=MonthlyScheduleOut)
+@router.get(
+    "/schedule/monthly",
+    response_model=MonthlyScheduleOut,
+    summary="View the monthly schedule grid",
+    description=(
+        "Returns every unit/shift slot for the requested month with assignment "
+        "status, assigned employees, and callout metadata."
+    ),
+)
 async def get_monthly_schedule(
     year: int = Query(...),
     month: int = Query(...),
@@ -126,7 +134,15 @@ async def get_monthly_schedule(
     return MonthlyScheduleOut(year=year, month=month, days=days)
 
 
-@router.post("/schedule/generate", response_model=ScheduleGenerationResult)
+@router.post(
+    "/schedule/generate",
+    response_model=ScheduleGenerationResult,
+    summary="Generate a monthly schedule",
+    description=(
+        "Builds a fresh month of schedule entries using the current filtering and "
+        "scoring rules, then reports coverage and unfilled-slot warnings."
+    ),
+)
 async def generate_schedule(
     req: GenerateScheduleRequest,
     db: AsyncSession = Depends(get_db),
@@ -141,7 +157,15 @@ async def generate_schedule(
     )
 
 
-@router.get("/schedule/work-hours", response_model=WorkHoursSnapshotOut)
+@router.get(
+    "/schedule/work-hours",
+    response_model=WorkHoursSnapshotOut,
+    summary="Inspect monthly workload and overtime exposure",
+    description=(
+        "Summarizes scheduled hours, overtime risk, float shifts, and related "
+        "workload metrics for the selected month."
+    ),
+)
 async def get_work_hours_snapshot(
     year: int = Query(...),
     month: int = Query(...),

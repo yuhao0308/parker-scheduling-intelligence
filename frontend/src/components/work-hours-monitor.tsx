@@ -89,6 +89,19 @@ function clampPercent(value: number) {
   return clamp(value, 0, 100);
 }
 
+function cycleBarStatus(employee: EmployeeWorkHours): keyof typeof STATUS_STYLES {
+  if (employee.license === "RN") {
+    if (employee.current_cycle_shifts >= 12) return "high_ot";
+    if (employee.current_cycle_shifts >= 10) return "overtime";
+    if (employee.current_cycle_shifts >= 9) return "near_ot";
+    return "healthy";
+  }
+  if (employee.current_cycle_hours >= 62.5) return "high_ot";
+  if (employee.current_cycle_hours > 37.5) return "overtime";
+  if (employee.current_cycle_hours >= 29.25) return "near_ot";
+  return "healthy";
+}
+
 function mixPercent(value: number, total: number) {
   if (!total) return 0;
   return clampPercent((value / total) * 100);
@@ -186,7 +199,11 @@ function getPeakLoadLabel(employee: EmployeeWorkHours) {
 
 function getProjectedRiskLabel(employee: EmployeeWorkHours) {
   if (employee.license === "RN") {
-    return `${employee.double_shift_days} double-shift day${employee.double_shift_days === 1 ? "" : "s"}`;
+    let label = `${employee.projected_overtime_shifts} OT shift${employee.projected_overtime_shifts === 1 ? "" : "s"}`;
+    if (employee.double_shift_days > 0) {
+      label += `, ${employee.double_shift_days} dbl-shift day${employee.double_shift_days === 1 ? "" : "s"}`;
+    }
+    return label;
   }
   return `${employee.projected_overtime_hours.toFixed(1)} OT hours`;
 }
@@ -260,18 +277,14 @@ function EmployeeCard({ employee }: { employee: EmployeeWorkHours }) {
 
   return (
     <article className="rounded-[26px] border border-slate-200/80 bg-white/88 p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-lg font-semibold tracking-tight text-slate-950">
-            {employee.name}
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {employee.employee_id} • Home {employee.home_unit_id ?? "Unassigned"}
-          </p>
-        </div>
-        <Badge className={cn("shrink-0 ring-1", status.badge)} variant="secondary">
-          {status.label}
-        </Badge>
+      {/* Identity header */}
+      <div className="min-w-0">
+        <h3 className="truncate text-lg font-semibold tracking-tight text-slate-950">
+          {employee.name}
+        </h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {employee.employee_id} • Home {employee.home_unit_id ?? "Unassigned"}
+        </p>
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -290,33 +303,22 @@ function EmployeeCard({ employee }: { employee: EmployeeWorkHours }) {
         ) : null}
       </div>
 
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">
-        {employee.overtime_detail}
-      </p>
-
-      <div className="mt-4 space-y-3">
-        <div className="rounded-2xl border border-slate-200/80 bg-slate-50/85 p-3.5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-medium text-slate-900">Current cycle load</div>
-            <div className="font-mono text-sm text-slate-600">{currentCycleValue}</div>
+      {/* Schedule Projection section */}
+      <div className="mt-4 rounded-2xl border border-indigo-100/80 bg-indigo-50/30 p-3.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+            Schedule Projection
           </div>
-          <div className="mt-3 relative h-2.5 overflow-hidden rounded-full bg-slate-200">
-            <div
-              className={cn("h-full rounded-full", status.bar)}
-              style={{ width: `${cycleFillPercent(employee)}%` }}
-            />
-            <div
-              className="absolute inset-y-0 w-px bg-slate-500/70"
-              style={{ left: `${cycleThresholdPercent(employee)}%` }}
-            />
-          </div>
-          <div className="mt-2 flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-slate-500">
-            <span>{employee.license === "RN" ? "RN biweekly OT marker" : "37.5h OT marker"}</span>
-            <span>Latest ledger</span>
-          </div>
+          <Badge className={cn("shrink-0 ring-1", status.badge)} variant="secondary">
+            {status.label}
+          </Badge>
         </div>
 
-        <div className="rounded-2xl border border-slate-200/80 bg-slate-50/85 p-3.5">
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          {employee.overtime_detail}
+        </p>
+
+        <div className="mt-3 rounded-2xl border border-slate-200/60 bg-white/85 p-3.5">
           <div className="flex items-center justify-between gap-3">
             <div className="text-sm font-medium text-slate-900">Home vs float mix</div>
             <div className="font-mono text-sm text-slate-600">
@@ -343,33 +345,58 @@ function EmployeeCard({ employee }: { employee: EmployeeWorkHours }) {
             <span>{employee.float_shifts} float</span>
           </div>
         </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <MetricTile
+            label="Selected Month"
+            value={`${employee.scheduled_hours.toFixed(1)}h`}
+            detail={`${employee.scheduled_shifts} scheduled shifts`}
+          />
+          <MetricTile
+            label="Peak Load"
+            value={getPeakLoadLabel(employee)}
+            detail={getProjectedRiskLabel(employee)}
+          />
+          <MetricTile
+            label="Unit Spread"
+            value={`${employee.scheduled_unit_ids.length} unit${employee.scheduled_unit_ids.length === 1 ? "" : "s"}`}
+            detail={
+              employee.scheduled_unit_ids.length > 0
+                ? employee.scheduled_unit_ids.join(", ")
+                : "No assignments in this month"
+            }
+          />
+        </div>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <MetricTile
-          label="Selected Month"
-          value={`${employee.scheduled_hours.toFixed(1)}h`}
-          detail={`${employee.scheduled_shifts} scheduled shifts`}
-        />
-        <MetricTile
-          label="Peak Load"
-          value={getPeakLoadLabel(employee)}
-          detail={getProjectedRiskLabel(employee)}
-        />
-        <MetricTile
-          label="Current Cycle"
-          value={currentCycleValue}
-          detail={`${employee.current_cycle_shifts} shifts in ledger`}
-        />
-        <MetricTile
-          label="Unit Spread"
-          value={`${employee.scheduled_unit_ids.length} unit${employee.scheduled_unit_ids.length === 1 ? "" : "s"}`}
-          detail={
-            employee.scheduled_unit_ids.length > 0
-              ? employee.scheduled_unit_ids.join(", ")
-              : "No assignments in this month"
-          }
-        />
+      {/* Current Actuals section */}
+      <div className="mt-3 rounded-2xl border border-emerald-100/80 bg-emerald-50/30 p-3.5">
+        <div className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500">
+          Current Actuals
+        </div>
+
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="text-sm font-medium text-slate-900">Cycle load</div>
+          <div className="font-mono text-sm text-slate-600">{currentCycleValue}</div>
+        </div>
+        <div className="mt-2 relative h-2.5 overflow-hidden rounded-full bg-slate-200">
+          <div
+            className={cn("h-full rounded-full", STATUS_STYLES[cycleBarStatus(employee)].bar)}
+            style={{ width: `${cycleFillPercent(employee)}%` }}
+          />
+          <div
+            className="absolute inset-y-0 w-px bg-slate-500/70"
+            style={{ left: `${cycleThresholdPercent(employee)}%` }}
+          />
+        </div>
+        <div className="mt-2 flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-slate-500">
+          <span>{employee.license === "RN" ? "RN biweekly OT marker" : "37.5h OT marker"}</span>
+          <span>
+            {employee.license === "RN"
+              ? `${employee.current_cycle_hours.toFixed(1)}h in ledger`
+              : `${employee.current_cycle_shifts} shifts in ledger`}
+          </span>
+        </div>
       </div>
     </article>
   );

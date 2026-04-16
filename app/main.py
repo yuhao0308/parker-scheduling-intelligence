@@ -8,9 +8,12 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+import asyncio
+
 from app.config import settings
 from app.exceptions import AppError
 from app.routes import admin, callout, health, lookup, overrides, schedule, sync
+from app.services.rationale import warm_ollama
 
 logger = structlog.get_logger()
 
@@ -33,7 +36,12 @@ async def lifespan(app: FastAPI):
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
     )
     logger.info("starting", version="0.1.0", shadow_mode=settings.shadow_mode)
+    # Preload Ollama model in the background so the first call-out doesn't pay
+    # the cold-load cost. Fire-and-forget — warm_ollama never raises.
+    warmup_task = asyncio.create_task(warm_ollama(settings))
     yield
+    if not warmup_task.done():
+        warmup_task.cancel()
     logger.info("shutting_down")
 
 

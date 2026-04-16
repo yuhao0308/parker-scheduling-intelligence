@@ -16,9 +16,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://parker:parker@localhost:5432/parker_scheduling"
 
     # Ollama (local LLM)
-    ollama_model: str = "qwen3.5:9b"
+    ollama_model: str = "qwen3:8b"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_timeout: int = 10
+    ollama_timeout: int = 90
+    ollama_warmup_timeout: int = 120
     ollama_temperature: float = 0.3
 
     # Scoring

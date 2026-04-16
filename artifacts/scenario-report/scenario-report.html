@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Scheduling Scenario Report</title>
+  </head>
+  <body style="margin:0;font-family:ui-sans-serif,system-ui,sans-serif;background:linear-gradient(180deg,#f8fafc 0%,#eef2ff 100%);color:#0f172a;">
+    <main style="max-width:980px;margin:0 auto;padding:32px 20px 48px;">
+      <header style="margin-bottom:24px;">
+        <div style="font-size:0.9rem;text-transform:uppercase;letter-spacing:0.08em;color:#475569;">Executable Scenario Report</div>
+        <h1 style="margin:8px 0 12px 0;font-size:2.4rem;line-height:1.1;">Scheduling Logic Proof</h1>
+        <p style="margin:0 0 16px 0;color:#334155;max-width:720px;">
+          This report runs named staffing scenarios against the live FastAPI application and records whether the current implementation matches the target business rule.
+        </p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#166534;background:#dcfce7;">PASS</span> <span>6</span>
+          <span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#92400e;background:#fef3c7;">GAP</span> <span>1</span>
+          <span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#991b1b;background:#fee2e2;">FAIL</span> <span>0</span>
+        </div>
+        <div style="margin-top:12px;color:#475569;">Generated: 2026-04-15T16:54:43.660777+00:00</div>
+      </header>
+      
+    <section style="background:white;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 10px 30px rgba(15,23,42,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;">
+        <div>
+          <h2 style="margin:0 0 8px 0;font-size:1.25rem;">Subacute callout ranks the best clinically appropriate CNA first</h2>
+          <div style="color:#475569;font-size:0.95rem;">When a Subacute CNA calls out, the top replacement should favor lower overtime exposure and stronger Short-Term fit over weaker clinical matches.</div>
+        </div>
+        <div><span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#166534;background:#dcfce7;">PASS</span></div>
+      </div>
+      <div style="margin-top:16px;color:#0f172a;">
+        <div><strong>ID:</strong> <code>callout-subacute-best-fit</code></div>
+        <div><strong>Expected:</strong> <code>pass</code></div>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Request</strong>
+        <pre style="white-space:pre-wrap;background:#f8fafc;border-radius:12px;padding:12px;border:1px solid #e2e8f0;overflow:auto;">{
+  &quot;callout_employee_id&quot;: &quot;CNA-CALL&quot;,
+  &quot;unit_id&quot;: &quot;U-SA1&quot;,
+  &quot;shift_date&quot;: &quot;2026-04-14&quot;,
+  &quot;shift_label&quot;: &quot;DAY&quot;
+}</pre>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Assertions</strong>
+        <ul style="padding-left:1.1rem;line-height:1.45;"><li><strong>PASS</strong> The home-unit CNA with straight-time headroom should rank first.<div style="margin-top:0.35rem;color:#475569;">expected top=CNA-HOME, actual top=CNA-HOME</div></li></ul>
+      </div>
+    </section>
+    
+
+    <section style="background:white;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 10px 30px rgba(15,23,42,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;">
+        <div>
+          <h2 style="margin:0 0 8px 0;font-size:1.25rem;">Unit exclusions remove the otherwise best-fit candidate</h2>
+          <div style="color:#475569;font-size:0.95rem;">A staff member excluded from a unit must never appear in recommendations for that unit, even if they would otherwise rank first.</div>
+        </div>
+        <div><span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#166534;background:#dcfce7;">PASS</span></div>
+      </div>
+      <div style="margin-top:16px;color:#0f172a;">
+        <div><strong>ID:</strong> <code>callout-exclusion-enforced</code></div>
+        <div><strong>Expected:</strong> <code>pass</code></div>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Request</strong>
+        <pre style="white-space:pre-wrap;background:#f8fafc;border-radius:12px;padding:12px;border:1px solid #e2e8f0;overflow:auto;">{
+  &quot;callout_employee_id&quot;: &quot;CNA-CALL&quot;,
+  &quot;unit_id&quot;: &quot;U-SA1&quot;,
+  &quot;shift_date&quot;: &quot;2026-04-15&quot;,
+  &quot;shift_label&quot;: &quot;DAY&quot;
+}</pre>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Assertions</strong>
+        <ul style="padding-left:1.1rem;line-height:1.45;"><li><strong>PASS</strong> The excluded employee should not appear in the recommendation list.<div style="margin-top:0.35rem;color:#475569;">candidate list=[&#x27;CNA-BACKUP&#x27;]</div></li><li><strong>PASS</strong> The excluded employee should be fully blocked for the target unit.<div style="margin-top:0.35rem;color:#475569;">in_candidates=False, in_monthly_assignments=False</div></li><li><strong>PASS</strong> The cross-trained backup should become the top valid candidate.<div style="margin-top:0.35rem;color:#475569;">expected top=CNA-BACKUP, actual top=CNA-BACKUP</div></li></ul>
+      </div>
+    </section>
+    
+
+    <section style="background:white;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 10px 30px rgba(15,23,42,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;">
+        <div>
+          <h2 style="margin:0 0 8px 0;font-size:1.25rem;">Rest-window conflicts remove candidates with adjacent shifts</h2>
+          <div style="color:#475569;font-size:0.95rem;">A candidate who would exceed the allowed operational-day shift load must be filtered out before scoring.</div>
+        </div>
+        <div><span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#166534;background:#dcfce7;">PASS</span></div>
+      </div>
+      <div style="margin-top:16px;color:#0f172a;">
+        <div><strong>ID:</strong> <code>callout-rest-window-enforced</code></div>
+        <div><strong>Expected:</strong> <code>pass</code></div>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Request</strong>
+        <pre style="white-space:pre-wrap;background:#f8fafc;border-radius:12px;padding:12px;border:1px solid #e2e8f0;overflow:auto;">{
+  &quot;callout_employee_id&quot;: &quot;CNA-CALL&quot;,
+  &quot;unit_id&quot;: &quot;U-SA1&quot;,
+  &quot;shift_date&quot;: &quot;2026-04-10&quot;,
+  &quot;shift_label&quot;: &quot;EVENING&quot;
+}</pre>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Assertions</strong>
+        <ul style="padding-left:1.1rem;line-height:1.45;"><li><strong>PASS</strong> The candidate with adjacent shifts should be filtered out.<div style="margin-top:0.35rem;color:#475569;">candidate list=[&#x27;CNA-SAFE&#x27;]</div></li><li><strong>PASS</strong> No rest-window-violating candidate should remain in the ranked list.<div style="margin-top:0.35rem;color:#475569;">candidate_present=False, rest_window_count=1</div></li><li><strong>PASS</strong> The safe candidate should be the best remaining option.<div style="margin-top:0.35rem;color:#475569;">expected top=CNA-SAFE, actual top=CNA-SAFE</div></li></ul>
+      </div>
+    </section>
+    
+
+    <section style="background:white;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 10px 30px rgba(15,23,42,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;">
+        <div>
+          <h2 style="margin:0 0 8px 0;font-size:1.25rem;">Monthly generation keeps Subacute licensed and LT certified where possible</h2>
+          <div style="color:#475569;font-size:0.95rem;">With sufficient staffing, Subacute shifts should be filled from the licensed bucket and Long-Term shifts from the certified bucket.</div>
+        </div>
+        <div><span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#166534;background:#dcfce7;">PASS</span></div>
+      </div>
+      <div style="margin-top:16px;color:#0f172a;">
+        <div><strong>ID:</strong> <code>schedule-bucket-preference</code></div>
+        <div><strong>Expected:</strong> <code>pass</code></div>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Request</strong>
+        <pre style="white-space:pre-wrap;background:#f8fafc;border-radius:12px;padding:12px;border:1px solid #e2e8f0;overflow:auto;">{
+  &quot;year&quot;: 2026,
+  &quot;month&quot;: 4,
+  &quot;staff_count_override&quot;: null
+}</pre>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Assertions</strong>
+        <ul style="padding-left:1.1rem;line-height:1.45;"><li><strong>PASS</strong> Sufficient staffing should produce the ideal scenario label.<div style="margin-top:0.35rem;color:#475569;">expected scenario=ideal, actual=ideal</div></li><li><strong>PASS</strong> The first Subacute day shift should be covered by a licensed staff member.<div style="margin-top:0.35rem;color:#475569;">slot_found=True, assigned_licenses=[&#x27;RN&#x27;], allowed=[&#x27;LPN&#x27;, &#x27;RN&#x27;]</div></li><li><strong>PASS</strong> The first LT day shift should be covered by a certified staff member.<div style="margin-top:0.35rem;color:#475569;">slot_found=True, assigned_licenses=[&#x27;CNA&#x27;], allowed=[&#x27;CNA&#x27;, &#x27;PCT&#x27;]</div></li></ul>
+      </div>
+    </section>
+    
+
+    <section style="background:white;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 10px 30px rgba(15,23,42,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;">
+        <div>
+          <h2 style="margin:0 0 8px 0;font-size:1.25rem;">Staff shortages preserve Subacute coverage ahead of LT</h2>
+          <div style="color:#475569;font-size:0.95rem;">When staffing is insufficient, higher-acuity Subacute coverage should be filled before lower-priority Long-Term coverage.</div>
+        </div>
+        <div><span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#166534;background:#dcfce7;">PASS</span></div>
+      </div>
+      <div style="margin-top:16px;color:#0f172a;">
+        <div><strong>ID:</strong> <code>schedule-shortage-subacute-priority</code></div>
+        <div><strong>Expected:</strong> <code>pass</code></div>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Request</strong>
+        <pre style="white-space:pre-wrap;background:#f8fafc;border-radius:12px;padding:12px;border:1px solid #e2e8f0;overflow:auto;">{
+  &quot;year&quot;: 2026,
+  &quot;month&quot;: 4,
+  &quot;staff_count_override&quot;: null
+}</pre>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Assertions</strong>
+        <ul style="padding-left:1.1rem;line-height:1.45;"><li><strong>PASS</strong> Severe understaffing should show up in the scenario badge.<div style="margin-top:0.35rem;color:#475569;">expected scenario=critical, actual=critical</div></li><li><strong>PASS</strong> Subacute should retain at least as many filled slots as Long-Term under shortage.<div style="margin-top:0.35rem;color:#475569;">subacute_assigned=25, lt_assigned=0</div></li></ul>
+      </div>
+    </section>
+    
+
+    <section style="background:white;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 10px 30px rgba(15,23,42,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;">
+        <div>
+          <h2 style="margin:0 0 8px 0;font-size:1.25rem;">Minimum-hours-first fairness is still a known gap</h2>
+          <div style="color:#475569;font-size:0.95rem;">A full-time employee who needs hours should be prioritized ahead of a per-diem employee taking extra shifts, even when the per-diem worker has a stronger home-unit match.</div>
+        </div>
+        <div><span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#92400e;background:#fef3c7;">GAP</span></div>
+      </div>
+      <div style="margin-top:16px;color:#0f172a;">
+        <div><strong>ID:</strong> <code>minimum-hours-priority-gap</code></div>
+        <div><strong>Expected:</strong> <code>gap</code></div>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Request</strong>
+        <pre style="white-space:pre-wrap;background:#f8fafc;border-radius:12px;padding:12px;border:1px solid #e2e8f0;overflow:auto;">{
+  &quot;callout_employee_id&quot;: &quot;CNA-CALL&quot;,
+  &quot;unit_id&quot;: &quot;U-LT1&quot;,
+  &quot;shift_date&quot;: &quot;2026-04-16&quot;,
+  &quot;shift_label&quot;: &quot;DAY&quot;
+}</pre>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Assertions</strong>
+        <ul style="padding-left:1.1rem;line-height:1.45;"><li><strong>MISS</strong> The full-time employee who needs hours should outrank the per-diem employee.<div style="margin-top:0.35rem;color:#475569;">expected priority candidate=CNA-FT-NEEDS-HOURS, actual top=CNA-PD-HOME</div></li></ul>
+      </div>
+    </section>
+    
+
+    <section style="background:white;border:1px solid #e2e8f0;border-radius:16px;padding:20px;margin-bottom:20px;box-shadow:0 10px 30px rgba(15,23,42,0.05);">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;">
+        <div>
+          <h2 style="margin:0 0 8px 0;font-size:1.25rem;">Ideal monthly generation produces full coverage with no hidden warnings</h2>
+          <div style="color:#475569;font-size:0.95rem;">With enough staff for the simplified monthly model, the generated month should be fully covered, ideal, and free of hidden warning noise.</div>
+        </div>
+        <div><span style="display:inline-block;padding:0.25rem 0.6rem;border-radius:999px;font-weight:600;color:#166534;background:#dcfce7;">PASS</span></div>
+      </div>
+      <div style="margin-top:16px;color:#0f172a;">
+        <div><strong>ID:</strong> <code>schedule-ideal-month-summary</code></div>
+        <div><strong>Expected:</strong> <code>pass</code></div>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Request</strong>
+        <pre style="white-space:pre-wrap;background:#f8fafc;border-radius:12px;padding:12px;border:1px solid #e2e8f0;overflow:auto;">{
+  &quot;year&quot;: 2026,
+  &quot;month&quot;: 4,
+  &quot;staff_count_override&quot;: null
+}</pre>
+      </div>
+      <div style="margin-top:16px;">
+        <strong>Assertions</strong>
+        <ul style="padding-left:1.1rem;line-height:1.45;"><li><strong>PASS</strong> The summary badge should report ideal coverage.<div style="margin-top:0.35rem;color:#475569;">expected scenario=ideal, actual=ideal</div></li><li><strong>PASS</strong> Ideal coverage should have no unfilled slots.<div style="margin-top:0.35rem;color:#475569;">unfilled_slots=0, allowed&lt;=0</div></li><li><strong>PASS</strong> Ideal coverage should not generate warning rows.<div style="margin-top:0.35rem;color:#475569;">warning_count=0, allowed&lt;=0</div></li><li><strong>PASS</strong> The monthly schedule view should show every slot assigned.<div style="margin-top:0.35rem;color:#475569;">unassigned_slots=0</div></li></ul>
+      </div>
+    </section>
+    
+    </main>
+  </body>
+</html>

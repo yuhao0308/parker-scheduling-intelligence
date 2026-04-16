@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Optional
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Date, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,8 +20,9 @@ class RecommendationLog(Base):
     target_unit_id: Mapped[str] = mapped_column(String(50), ForeignKey("unit.unit_id"))
     target_shift_label: Mapped[ShiftLabel] = mapped_column(Enum(ShiftLabel))
     target_shift_date: Mapped[date] = mapped_column(Date)
-    ranked_candidates: Mapped[dict] = mapped_column(JSONB)
-    filter_stats: Mapped[dict] = mapped_column(JSONB)
+    # Use portable JSON in tests while preserving JSONB on PostgreSQL.
+    ranked_candidates: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
+    filter_stats: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
 
 
 class OverrideLog(Base):

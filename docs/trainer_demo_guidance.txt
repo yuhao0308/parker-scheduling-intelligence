@@ -1,0 +1,1250 @@
+PARKER SCHEDULING INTELLIGENCE
+Trainer Demo Guidance and Q&A Script
+Prepared: April 15, 2026
+
+==================================================
+1. PURPOSE OF THIS GUIDE
+==================================================
+
+This guide is for a 10-15 minute recorded demo with your trainer or supervisor.
+Its purpose is to help you:
+
+- explain the demo clearly and confidently
+- describe the backend logic in a way that is detailed but still easy to follow
+- answer likely follow-up questions from your trainer, supervisor, or future customers
+- stay accurate about what the current demo does now versus what is planned for later
+
+The safest positioning is:
+
+"This is an explainable AI-assisted scheduling system. In the current demo, it uses deterministic business rules, weighted scoring, and transparent rationale generation to support monthly scheduling and same-day call-out replacement."
+
+Important:
+Do not oversell this as a fully autonomous black-box machine learning system that learns everything by itself. The current demo is stronger when presented as an explainable intelligence layer with human oversight.
+
+
+==================================================
+2. MAIN MESSAGE TO REPEAT THROUGHOUT THE DEMO
+==================================================
+
+The entire demo should keep coming back to three business outcomes:
+
+- faster staffing decisions
+- lower avoidable overtime
+- more consistent and explainable scheduling choices
+
+One short version you can repeat:
+
+"The goal of this demo is to show that we can help scheduling teams generate monthly coverage faster, respond to same-day call-outs faster, and do both in a more explainable and defensible way."
+
+
+==================================================
+3. HOW TO POSITION THE CURRENT DEMO
+==================================================
+
+Use this framing early:
+
+"This demo has two main parts. First, monthly auto-scheduling, where the system generates a schedule across the month based on staffing constraints and business priorities. Second, same-day replacement recommendation, where the system ranks the best replacement candidates when someone calls out."
+
+"The current phase is focused most strongly on call-out support, because that is the most urgent operational pain point. The monthly scheduling view is included to show the broader scheduling direction and how the same intelligence layer can expand over time."
+
+"We are mainly validating the algorithmic logic in this phase. The UI can continue to evolve, including the Marvel design, but the key thing we are presenting here is the decision logic."
+
+
+==================================================
+4. VERY IMPORTANT ACCURACY NOTES
+==================================================
+
+These points keep you safe if your trainer asks detailed questions.
+
+What the current demo clearly does:
+
+- loads active staff, units, schedule entries, and hours data from the database
+- generates a month of assignments based on staffing logic
+- handles red, yellow, and green staffing states in the UI
+- ranks replacement candidates for a call-out
+- explains why each recommendation appears
+- logs the final human decision
+- requires a reason if the user selects someone other than the top-ranked candidate
+- lets weights be adjusted from the admin side
+
+What the current demo does not fully claim yet:
+
+- resident-level acuity matching
+- bedside-level assignment matching
+- fully automated leave-request impact planning inside the monthly generator
+- automated staff outreach or notifications
+- a self-training model that continuously retrains from historical data
+- full production integration into Parker's live scheduling platform
+
+Safe wording:
+
+"Those are planned refinement areas, but the current demo is intentionally focused on explainable staffing logic first."
+
+
+==================================================
+5. SUGGESTED 10-15 MINUTE DEMO FLOW
+==================================================
+
+Recommended timing:
+
+- 0:00-2:00: introduction and business purpose
+- 2:00-6:00: monthly schedule generation
+- 6:00-10:00: call-out recommendation flow
+- 10:00-13:00: backend logic summary
+- 13:00-15:00: anticipated Q&A
+
+Recommended transition structure:
+
+1. Start with the business problem
+2. Show the monthly schedule page
+3. Explain green, yellow, and red states
+4. Click a staffed slot to show assigned staff
+5. Click an unassigned or call-out slot
+6. Transition into recommendation logic
+7. Show ranked candidates and score breakdown
+8. Close by reinforcing human-in-the-loop control
+
+
+==================================================
+6. INTRODUCTION SCRIPT
+==================================================
+
+Use this as your opening answer when asked:
+"Can you explain a little bit about this demo?"
+
+Suggested script:
+
+"This demo is for Parker Scheduling Intelligence, which is designed to help scheduling teams make staffing decisions faster, more consistently, and with clearer reasoning."
+
+"There are two main business problems we are addressing. The first is monthly schedule generation, where the system helps build coverage across the month while respecting staffing constraints. The second is same-day call-out replacement, where the system quickly ranks the best replacement candidates when someone becomes unavailable."
+
+"The current demo emphasizes explainability. We are not asking users to trust a black box. Instead, the system applies staffing rules, checks eligibility, scores candidates against configurable priorities, and then shows why a person was recommended."
+
+"It is also designed as an intelligence layer that can sit on top of the current scheduling workflow, rather than forcing a full replacement of the existing system."
+
+"So the key value is not just automation. The key value is faster decisions, lower avoidable overtime, better unit fit, and more transparent staffing choices."
+
+
+==================================================
+7. WHAT TO SAY WHEN YOU OPEN THE SCHEDULE PAGE
+==================================================
+
+Suggested script:
+
+"On the schedule page, we can generate a monthly schedule and review coverage day by day."
+
+"The color coding is straightforward. Green means the slot is assigned. Yellow means the slot is still unassigned and needs attention. Red means there is an active call-out or urgent replacement need."
+
+"This is useful because a coordinator can immediately see which parts of the month are stable and which areas need intervention."
+
+"For the demo, we can also simulate different staffing conditions, such as full staffing, moderate shortage, and critical shortage, to show how the system behaves under different levels of pressure."
+
+
+==================================================
+8. MONTHLY AUTO-SCHEDULING: SIMPLE EXPLANATION
+==================================================
+
+Use this first, before going into technical detail:
+
+"The monthly scheduler works by going through the month day by day, unit by unit, and shift by shift. For each slot, it looks at who is eligible, who is already scheduled, who would create overtime pressure, and who is the best clinical fit for that unit."
+
+"The system tries to produce the most stable schedule possible while keeping staffing safe and explainable. If there are enough people, the schedule should trend toward all green. If staffing is tight, the system still produces the best available schedule and surfaces where the real gaps are."
+
+
+==================================================
+9. MONTHLY AUTO-SCHEDULING: BACKEND LOGIC
+==================================================
+
+If asked to explain the backend logic in detail, use this structure.
+
+9.1 Inputs used by the monthly scheduler
+
+The scheduler uses:
+
+- active units
+- active staff
+- each employee's license type
+- employment class such as full-time, part-time, or per diem
+- home unit and unit typology
+- cross-training information
+- hire date
+- baseline hours ledger
+- configurable scoring weights
+- the requested month and year
+
+For demo scenarios, it can also artificially reduce the available staff pool to simulate moderate or critical shortage conditions.
+
+9.2 How the monthly schedule is generated
+
+The scheduler:
+
+- clears the existing schedule entries for that month
+- loads all active units
+- sorts units so Subacute units are considered before Long-Term units
+- loads the available staff pool
+- walks through every day of the month
+- for each day, walks through each unit
+- for each unit, walks through each shift in order: Day, Evening, Night
+
+9.3 Staffing preference by unit type
+
+In the current demo, the simplified staffing model uses one staff member per unit per shift.
+
+The unit preference is:
+
+- Subacute: prefer licensed staff first, then certified staff as fallback
+- Long-Term: prefer certified staff first, then licensed staff as fallback
+
+This is important because it shows that the system is not filling slots randomly. It is trying to preserve clinically appropriate coverage by unit type.
+
+9.4 Hard eligibility checks before assignment
+
+Before assigning someone to a shift, the scheduler filters candidates to remove people who should not be considered for that slot.
+
+The current monthly scheduler enforces:
+
+- license bucket matching
+- no duplicate assignment to the exact same slot
+- rest-window protection through operational-day shift counting
+- weekly scheduling caps by employment class
+
+The weekly caps in the current demo are:
+
+- full-time: up to 41.25 hours
+- part-time: up to 24.75 hours
+- per diem: up to 41.25 hours
+
+The rest-window logic is based on Parker's operational day, which runs from 11:00 PM to 11:00 PM, not midnight to midnight.
+
+That matters especially for Night shift, because a Night shift starting at 11:00 PM is treated as part of the next operational day.
+
+9.5 How the monthly scheduler chooses the best person
+
+Once ineligible people are filtered out, the remaining candidates are scored.
+
+For monthly scheduling, the key scoring dimensions are:
+
+- overtime headroom
+- clinical fit
+- float penalty
+
+Proximity is intentionally neutralized in monthly scheduling because travel distance is much more relevant for emergency call-outs than for planned monthly scheduling.
+
+The scheduler then assigns the highest-scoring surviving candidate.
+
+9.6 What happens if nobody fits
+
+If no candidate passes the filters and weekly caps, that slot is left unfilled.
+
+The system records a warning and the UI surfaces the gap.
+
+This is a strength, not a weakness, because the system is showing the real staffing constraint instead of hiding it with an unsafe assignment.
+
+9.7 Scenario labels
+
+After generation, the scheduler classifies the month as:
+
+- ideal: no unfilled slots
+- moderate: up to 10 percent unfilled
+- critical: more than 10 percent unfilled
+
+This gives the user an immediate sense of staffing severity.
+
+9.8 Safe summary line
+
+"So the monthly scheduler is not just filling slots. It is applying staffing constraints, unit priorities, overtime awareness, and clinical fit rules to build the best possible month from the current database state."
+
+9.9 Monthly scheduler mathematical demonstration
+
+If your trainer asks for the actual calculation, use this exact structure.
+
+Monthly scheduler decision pipeline for one slot:
+
+Step 1. Choose preferred bucket by unit type
+
+- Subacute slot: licensed first, certified second
+- Long-Term slot: certified first, licensed second
+
+Step 2. Filter out ineligible staff
+
+The candidate must satisfy all of the following:
+
+- correct license bucket
+- not already scheduled in that exact slot
+- does not violate the rest-window rule
+- does not exceed weekly assignment cap after adding this shift
+
+Weekly cap math:
+
+- shift_duration = 8.25 hours
+- full_time_cap = 41.25
+- part_time_cap = 24.75
+- per_diem_cap = 41.25
+
+The cap test is:
+
+current_weekly_hours + 8.25 <= weekly_cap
+
+If false, the candidate is removed.
+
+Step 3. Compute the score for each surviving candidate
+
+The monthly scheduler uses the same weighted score function as the recommendation engine, but with proximity fixed to 0.5 for everyone, and seniority, equity, and willingness left at 0 in the actual scheduler call.
+
+Monthly scheduler score formula:
+
+MonthlyScore
+= 0.45 * OvertimeHeadroom
++ 0.22 * ClinicalFit
+- 0.13 * FloatPenalty
++ 0.05 * 0.5
+
+Since 0.05 * 0.5 = 0.025, this becomes:
+
+MonthlyScore
+= 0.45 * OvertimeHeadroom
++ 0.22 * ClinicalFit
+- 0.13 * FloatPenalty
++ 0.025
+
+That last 0.025 is a constant added to every surviving candidate, so in practice it does not change the ranking order. It just means the ranking is effectively driven by:
+
+- overtime headroom
+- clinical fit
+- float penalty
+
+Step 4. Assign the highest-scoring candidate
+
+The selected person is:
+
+argmax(MonthlyScore)
+
+If no one survives the filter and cap checks, the slot stays unfilled.
+
+9.10 Monthly scheduler scoring components, mathematically
+
+A. Overtime headroom for CNA, PCT, and LPN
+
+Definitions:
+
+- weekly_overtime_threshold = 37.5
+- soft_cap = 62.5
+- shift_duration = 8.25
+- hours_after_shift = hours_this_cycle + 8.25
+
+Overtime trigger flag:
+
+would_trigger_ot = (hours_after_shift > 37.5)
+
+Normalized overtime headroom:
+
+If hours_this_cycle <= 37.5:
+OvertimeHeadroom = 1.0
+
+If 37.5 < hours_this_cycle < 62.5:
+OvertimeHeadroom = 1 - ((hours_this_cycle - 37.5) / 25.0)
+
+If hours_this_cycle >= 62.5:
+OvertimeHeadroom = 0.0
+
+Interpretation:
+
+- 1.0 means strong straight-time headroom
+- 0.0 means the person is already at or beyond the soft cap
+
+B. Overtime headroom for RN
+
+RN overtime uses two tracks:
+
+1. Daily overtime
+2. Biweekly shift-count overtime
+
+Daily overtime rule:
+
+- if the RN already has a shift in the same operational day, adding another shift makes daily_headroom = 0
+- otherwise daily_headroom = 1
+
+Biweekly overtime rule:
+
+- threshold = 10 shifts in the biweekly cycle
+- the 11th shift triggers overtime
+
+Formula:
+
+biweekly_headroom = max(0, (10 - shift_count_this_biweek) / 10)
+
+Final RN overtime headroom:
+
+OvertimeHeadroom = min(daily_headroom, biweekly_headroom)
+
+C. Clinical fit values
+
+ClinicalFit = 1.0 if any of the following is true:
+
+- home unit matches target unit
+- candidate is cross-trained for the target unit
+- candidate home typology matches target typology
+
+ClinicalFit = 0.8 if:
+
+- candidate is Subacute and target is Long-Term
+
+ClinicalFit = 0.0 if:
+
+- candidate is Long-Term only and target is Subacute
+
+D. Float penalty values
+
+FloatPenalty = 0.0 if:
+
+- target unit is the candidate's home unit
+
+FloatPenalty = 0.3 if:
+
+- different unit, same typology
+
+FloatPenalty = 0.6 if:
+
+- different unit, different typology
+
+If tenure < 6 months:
+
+FloatPenalty = min(base_penalty * 1.5, 1.0)
+
+9.11 Monthly scheduler worked example
+
+Suppose we are filling a Subacute Day shift and have two surviving candidates.
+
+Candidate A:
+
+- CNA or licensed-bucket equivalent appropriate for the slot
+- hours_this_cycle = 30.0
+- home unit = target unit
+- same unit fit
+- no float
+
+Candidate B:
+
+- eligible for the slot
+- hours_this_cycle = 45.0
+- from Long-Term, not home unit
+- floating cross-typology
+- not a new hire
+
+Candidate A calculations:
+
+OvertimeHeadroom = 1.0
+ClinicalFit = 1.0
+FloatPenalty = 0.0
+
+MonthlyScore
+= 0.45(1.0) + 0.22(1.0) - 0.13(0.0) + 0.025
+= 0.45 + 0.22 + 0 + 0.025
+= 0.695
+
+Displayed as an approximate score concept:
+0.695 x 100 = 69.5
+
+Candidate B calculations:
+
+OvertimeHeadroom = 1 - ((45.0 - 37.5) / 25.0)
+= 1 - (7.5 / 25.0)
+= 0.7
+
+ClinicalFit = 0.0
+FloatPenalty = 0.6
+
+MonthlyScore
+= 0.45(0.7) + 0.22(0.0) - 0.13(0.6) + 0.025
+= 0.315 + 0 - 0.078 + 0.025
+= 0.262
+
+Candidate A wins because:
+
+- much better overtime headroom
+- perfect unit fit
+- no float penalty
+
+This is the kind of mathematical demonstration that is strong in a trainer conversation, because it shows exactly why one person outranks another.
+
+
+==================================================
+10. HOW TO EXPLAIN GREEN, YELLOW, AND RED
+==================================================
+
+If the trainer asks how to explain the colors:
+
+Green:
+"Green means the slot is already assigned. This is our ideal outcome."
+
+Yellow:
+"Yellow means the slot is still unassigned. Usually that means the system could not safely fill it with the current staffing pool, so it is surfaced for review."
+
+Red:
+"Red means there is an active call-out or urgent replacement need. This is where the recommendation engine becomes especially valuable."
+
+Good transition sentence:
+
+"Green shows where the schedule is stable. Yellow and red show where human attention is needed, and red is where the second AI-assisted recommendation flow becomes most important."
+
+
+==================================================
+11. HOW TO TALK ABOUT SHORTAGE AND OVERTIME
+==================================================
+
+Use this when your trainer asks why there may still be yellow or red slots:
+
+"The goal is to reduce avoidable overtime and unsafe assignments, not to pretend impossible staffing situations do not exist."
+
+"If staffing is sufficient, the schedule should move toward all green. If staffing is insufficient, the system still prioritizes the best possible coverage and clearly surfaces where the real gaps are."
+
+"So when overtime appears, it does not mean the logic failed. It means the system is showing the operational reality and choosing the least harmful option available under the current staffing constraints."
+
+"In shortage scenarios, the current logic also prioritizes Subacute coverage ahead of Long-Term coverage, because higher-acuity areas need stronger protection."
+
+
+==================================================
+12. RECOMMENDATION MODEL: SIMPLE EXPLANATION
+==================================================
+
+Use this when transitioning from monthly scheduling into same-day replacement:
+
+"When someone calls out, the recommendation engine starts from the open shift, removes all ineligible people, scores the remaining valid candidates, ranks them, and then explains why each recommendation appears."
+
+"This keeps the coordinator in control, but it removes the need to search manually through the roster from memory."
+
+
+==================================================
+13. RECOMMENDATION MODEL: BACKEND LOGIC
+==================================================
+
+13.1 Inputs used by the recommendation engine
+
+The recommendation flow uses:
+
+- the employee who called out
+- the target unit
+- the shift date
+- the shift label
+- the active staff roster
+- home unit information
+- unit typology
+- cross-training data
+- current schedule state
+- PTO records
+- unit exclusion records
+- hours ledger
+- recent shift history
+- configurable scoring weights
+
+13.2 Step 1: infer the required license bucket
+
+The system first looks at the employee who called out and infers what license bucket the replacement must match.
+
+In practice:
+
+- if the call-out was from a licensed role, the replacement must come from the licensed bucket
+- if the call-out was from a certified role, the replacement must come from the certified bucket
+
+This prevents unsafe substitutions.
+
+13.3 Step 2: build the current schedule context
+
+The system builds context around the target date and shift, including:
+
+- who is already scheduled
+- who is on PTO
+- which shifts each candidate recently worked
+- current per-unit coverage counts
+
+This allows it to reason from the actual live scheduling state instead of from a disconnected ranking table.
+
+13.4 Step 3: hard filters
+
+Before scoring, the engine removes anyone who fails a hard rule.
+
+The main hard filters are:
+
+- license mismatch
+- already scheduled for that shift
+- on PTO
+- excluded from that unit
+- rest-window violation
+- source-unit coverage floor protection
+
+The source-unit coverage floor is important. It prevents the system from fixing one problem by creating a new staffing problem in the person's home unit.
+
+13.5 Step 4: scoring the valid candidates
+
+After filtering, the remaining candidates are scored using weighted dimensions.
+
+Current configured weights:
+
+- overtime headroom: 45 percent
+- clinical fit: 22 percent
+- float penalty: 13 percent
+- seniority: 8 percent
+- proximity: 5 percent
+- equity: 5 percent
+- willingness: 2 percent
+
+The important message is:
+
+"Overtime is weighted highest because that is the strongest financial and operational pressure Parker identified. Clinical fit is next because we still need the right people in the right places. The rest of the signals help break ties and improve quality."
+
+13.6 What each scoring dimension means
+
+Overtime headroom:
+- prefers people with more straight-time capacity left
+- helps avoid avoidable overtime
+
+Clinical fit:
+- rewards home-unit match
+- rewards cross-training for the target unit
+- rewards same typology match
+- treats Subacute to Long-Term as acceptable
+- strongly penalizes Long-Term-only to Subacute
+
+Float penalty:
+- penalizes moving people away from their home unit
+- penalizes cross-typology floating more heavily
+- penalizes newer staff more heavily when floating
+
+Seniority:
+- gives modest credit for longer tenure
+- saturates at 10 years in the current configuration
+
+Proximity:
+- estimates travel distance from the employee zip code to the facility
+- used as a light signal, mainly for tie-breaking
+
+Equity:
+- helps surface under-used per-diem staff who have been dormant
+- this is meant to avoid overusing the same people every time
+
+Willingness:
+- currently a very low-weight signal
+- right now it defaults to a neutral baseline until more override history is available
+
+13.7 Overtime logic details
+
+For CNA, PCT, and LPN:
+
+- weekly overtime threshold is 37.5 hours
+- the model uses a soft-cap logic up to 62.5 hours
+- beyond that point, the headroom signal drops to zero
+
+For RN:
+
+- daily overtime can be triggered by a second shift in the same operational day
+- biweekly overtime can be triggered on the 11th shift in a 14-day cycle
+
+This matters because different roles may have different overtime behavior, and the engine takes that into account before ranking candidates.
+
+13.8 Step 5: rank and explain
+
+The engine sorts candidates by score and returns the top results.
+
+The UI shows:
+
+- rank
+- name
+- license
+- employment class
+- home unit
+- score
+- score breakdown
+- rationale
+
+The rationale explains the recommendation in plain language, such as:
+
+- hours remaining before overtime
+- experience or unit fit
+- whether this is the home unit or a float
+- approximate travel distance
+
+13.9 Step 6: human-in-the-loop selection
+
+The coordinator makes the final decision.
+
+If the user selects the number one candidate, the system logs that selection directly.
+
+If the user selects someone other than number one, the system asks for a reason and logs the override.
+
+This is an important governance and compliance feature because it preserves human judgment while still keeping a traceable decision record.
+
+13.10 Safe summary line
+
+"So the recommendation engine first eliminates unsafe options, then ranks the valid ones by Parker's operational priorities, and finally explains the result so the coordinator can make the final call."
+
+13.11 Recommendation engine exact score formula
+
+For each surviving candidate, the recommendation engine computes:
+
+RecommendationScore
+= 0.45 * OvertimeHeadroom
++ 0.22 * ClinicalFit
++ 0.05 * Proximity
++ 0.08 * Seniority
++ 0.05 * Equity
++ 0.02 * Willingness
+- 0.13 * FloatPenalty
+
+The UI then displays:
+
+DisplayedScore = round(RecommendationScore * 100)
+
+So a raw score of 0.789 is shown as about 79 out of 100.
+
+13.12 Recommendation engine full calculation process
+
+Step 1. Start with all active staff.
+
+Step 2. Infer required replacement bucket from the person who called out:
+
+- licensed bucket if the call-out employee was RN or LPN
+- certified bucket if the call-out employee was CNA or PCT
+
+Step 3. Apply hard filters.
+
+A candidate is removed if any of these is true:
+
+- wrong license bucket
+- already scheduled for that shift
+- on PTO
+- excluded from the target unit
+- violates rest-window rule
+- removing them from their source unit would drop that source unit below minimum coverage
+
+Source-unit coverage floor math:
+
+For a candidate currently rostered on their home unit during that same shift:
+
+- if licensed_count - 1 < minimum_licensed_for_home_unit, reject
+- if certified_count - 1 < minimum_certified_for_home_unit, reject
+
+Current minimum licensed rule in the loader:
+
+- Subacute home unit minimum licensed = 2
+- Long-Term home unit minimum licensed = 1
+
+Current minimum certified rule in the loader:
+
+- required_ratio if present
+- otherwise default = 4
+
+Step 4. Score every survivor using the weighted formula.
+
+Step 5. Sort descending by score.
+
+Step 6. Return the top N candidates with explanation.
+
+13.13 Recommendation engine scoring components, mathematically
+
+A. Overtime headroom
+
+The overtime formulas are the same ones used above.
+
+For CNA, PCT, and LPN:
+
+If hours_this_cycle <= 37.5:
+OvertimeHeadroom = 1.0
+
+If 37.5 < hours_this_cycle < 62.5:
+OvertimeHeadroom = 1 - ((hours_this_cycle - 37.5) / 25.0)
+
+If hours_this_cycle >= 62.5:
+OvertimeHeadroom = 0.0
+
+The overtime trigger flag still uses projected post-shift hours:
+
+would_trigger_ot = (hours_this_cycle + 8.25 > 37.5)
+
+For RN:
+
+daily_headroom = 0 if the RN already has a shift in the same operational day, else 1
+
+biweekly_headroom = max(0, (10 - shift_count_this_biweek) / 10)
+
+OvertimeHeadroom = min(daily_headroom, biweekly_headroom)
+
+B. Proximity
+
+Distance is estimated from candidate ZIP code to facility ZIP code.
+
+If ZIP lookup fails, the code uses:
+
+distance_miles = 50.0
+
+Normalized proximity score:
+
+Proximity = max(0, 1 - distance_miles / 30)
+
+Examples:
+
+- 0 miles -> 1.0
+- 3 miles -> 0.9
+- 9 miles -> 0.7
+- 30 miles -> 0.0
+- anything above 30 miles -> 0.0
+
+C. Clinical fit
+
+ClinicalFit = 1.0 for:
+
+- home unit match
+- exact target-unit cross-training
+- same unit typology
+
+ClinicalFit = 0.8 for:
+
+- Subacute staff covering Long-Term
+
+ClinicalFit = 0.0 for:
+
+- Long-Term-only staff covering Subacute
+
+D. Float penalty
+
+FloatPenalty = 0.0 for home unit
+FloatPenalty = 0.3 for different unit, same typology
+FloatPenalty = 0.6 for different unit, different typology
+
+If tenure < 6 months:
+
+FloatPenalty = min(base_penalty * 1.5, 1.0)
+
+E. Seniority
+
+Tenure in years:
+
+tenure_years = max(0, (reference_date - hire_date) / 365.25)
+
+Normalized seniority score:
+
+Seniority = min(1.0, tenure_years / 10.0)
+
+Examples:
+
+- 2 years -> 0.2
+- 8 years -> 0.8
+- 12 years -> 1.0
+
+F. Equity
+
+This boost applies only to per-diem staff.
+
+If employment class is not PER_DIEM:
+
+Equity = 0
+
+If per diem and never worked:
+
+Equity = 1.0
+
+If per diem and days_since_last_shift <= 30:
+
+Equity = 0.0
+
+If per diem and days_since_last_shift > 30:
+
+Equity = min(1.0, (days_since_last_shift - 30) / 30)
+
+Examples:
+
+- 45 idle days -> (45 - 30) / 30 = 0.5
+- 60 idle days -> 1.0
+
+G. Willingness
+
+Current demo value:
+
+Willingness = 0.5
+
+This is intentionally low-weight until more acceptance history is available.
+
+13.14 Recommendation engine worked example
+
+Suppose a CNA calls out from a Subacute Day shift, and after filtering we have two candidates.
+
+Candidate 1:
+
+- CNA
+- full-time
+- home unit = target unit
+- hours_this_cycle = 30.0
+- distance = 3 miles
+- hire date = 8 years ago
+- not per diem
+- willingness = 0.5
+
+Candidate 1 calculations:
+
+OvertimeHeadroom = 1.0
+ClinicalFit = 1.0
+Proximity = 1 - (3 / 30) = 0.9
+FloatPenalty = 0.0
+Seniority = 8 / 10 = 0.8
+Equity = 0.0
+Willingness = 0.5
+
+RecommendationScore
+= 0.45(1.0)
++ 0.22(1.0)
++ 0.05(0.9)
++ 0.08(0.8)
++ 0.05(0.0)
++ 0.02(0.5)
+- 0.13(0.0)
+
+= 0.45
++ 0.22
++ 0.045
++ 0.064
++ 0
++ 0.010
+- 0
+
+= 0.789
+
+DisplayedScore = about 79/100
+
+Candidate 2:
+
+- CNA
+- full-time
+- same typology but not home unit
+- hours_this_cycle = 45.0
+- distance = 9 miles
+- hire date = 2 years ago
+- not per diem
+- willingness = 0.5
+
+Candidate 2 calculations:
+
+OvertimeHeadroom
+= 1 - ((45.0 - 37.5) / 25.0)
+= 1 - (7.5 / 25.0)
+= 0.7
+
+ClinicalFit = 1.0
+Proximity = 1 - (9 / 30) = 0.7
+FloatPenalty = 0.3
+Seniority = 2 / 10 = 0.2
+Equity = 0.0
+Willingness = 0.5
+
+RecommendationScore
+= 0.45(0.7)
++ 0.22(1.0)
++ 0.05(0.7)
++ 0.08(0.2)
++ 0.05(0.0)
++ 0.02(0.5)
+- 0.13(0.3)
+
+= 0.315
++ 0.22
++ 0.035
++ 0.016
++ 0
++ 0.010
+- 0.039
+
+= 0.557
+
+DisplayedScore = about 56/100
+
+Why Candidate 1 ranks above Candidate 2:
+
+- better overtime headroom
+- same perfect clinical fit
+- closer to the facility
+- no float penalty
+- stronger seniority
+
+13.15 Very short mathematical summary you can say aloud
+
+"For recommendation ranking, we first filter out everyone who is not legally or operationally eligible. Then for each valid person we compute a weighted score: 45 percent overtime headroom, 22 percent clinical fit, 5 percent proximity, 8 percent seniority, 5 percent equity, and 2 percent willingness, minus a 13 percent float penalty. Then we sort from highest score to lowest score."
+
+
+==================================================
+14. HOW TO EXPLAIN THE DIFFERENCE BETWEEN THE TWO ENGINES
+==================================================
+
+Use this exact contrast if needed:
+
+"The monthly scheduler is for planned coverage across the whole month. The recommendation engine is for urgent same-day staffing changes. They share some of the same staffing logic, but the recommendation engine is more sensitive to real-time factors like current schedule context, PTO, exclusions, travel distance, and immediate overtime impact."
+
+
+==================================================
+15. HOW TO TALK ABOUT EXPERIENCE, CERTIFICATION, AND UNIT MATCH
+==================================================
+
+Your trainer specifically mentioned questions like:
+"If someone has 8 or 10 years of experience on a certain unit, is that considered?"
+
+Use this answer:
+
+"Yes, experience is considered, but in the current demo we represent it through several practical signals rather than one single experience score."
+
+"First, the system considers license and certification, so it only recommends staff from the appropriate qualified bucket. Second, it considers home unit and unit typology, which captures whether the person is already aligned with that kind of care environment. Third, it considers cross-training for a target unit. Fourth, it gives a modest seniority signal based on tenure."
+
+"So while the current demo is not yet doing deep resident-level competency modeling, it is already using the most operationally useful experience signals that are available in the staffing data."
+
+
+==================================================
+16. HOW TO TALK ABOUT FULL-TIME, PART-TIME, AND PER DIEM
+==================================================
+
+Use this wording:
+
+"Employment class is part of the logic, but it is not the headline signal in the current demo."
+
+"In monthly scheduling, employment class affects weekly assignment caps. In recommendation ranking, it affects equity logic and how dormant per-diem staff may be surfaced."
+
+"So yes, the model distinguishes between full-time, part-time, and per-diem staff, but the higher-order priorities are still safety, overtime control, and clinical fit."
+
+If asked whether weekends could prefer part-time staff:
+
+"That is a configurable business rule we can add or tune. The current demo already supports configurable weighting and rule-based filtering, so that type of preference is feasible."
+
+
+==================================================
+17. HOW TO USE THE UI DURING THE DEMO
+==================================================
+
+Best sequence on screen:
+
+1. Open the Schedule page.
+2. Generate a schedule for a scenario.
+3. Point out the status counts and scenario badge.
+4. Click a green slot and show the assigned employees.
+5. Explain that green means the system found a valid assignment.
+6. Click a yellow or red slot.
+7. Click "Get Replacement Recommendations."
+8. Show the ranked candidate list.
+9. Expand "Why?" for one or two candidates.
+10. Point out the score breakdown and rationale.
+11. If useful, select the top candidate.
+12. Mention that selecting a lower-ranked option requires an override reason.
+
+Smooth transition sentence:
+
+"Now that we've seen how the monthly schedule surfaces stable and unstable coverage, let's look at what happens when there is an actual gap that needs a replacement decision."
+
+
+==================================================
+18. SUGGESTED FULL TALK TRACK
+==================================================
+
+You can use this nearly word for word.
+
+"This demo shows Parker Scheduling Intelligence, which is designed to support faster and more consistent staffing decisions. We are focusing on two business problems: monthly schedule generation and same-day call-out replacement."
+
+"On the monthly schedule side, the system generates assignments across the month using the current database state, available staff, licensing rules, employment class, unit fit, and overtime-aware logic. Green means assigned, yellow means unassigned, and red means a call-out or urgent replacement need."
+
+"The monthly engine processes the schedule day by day, unit by unit, and shift by shift. For each open slot, it first removes ineligible people, then scores the valid candidates using signals like overtime headroom, clinical fit, and float penalty, and assigns the strongest fit. If no safe option exists, the gap stays visible rather than being hidden with a bad assignment."
+
+"For same-day replacement, the second engine begins when someone calls out. It identifies the required license bucket, removes anyone who is not eligible, such as people already scheduled, on PTO, excluded from the unit, or blocked by rest-window rules, and then ranks the remaining staff using Parker's priorities."
+
+"The most important scoring factor is overtime headroom, followed by clinical fit. Additional signals include float penalty, seniority, proximity, equity, and a low-weight willingness signal. The result is a ranked list with transparent explanations, so the coordinator can see not just who is recommended, but why."
+
+"The coordinator remains in control. If they take the top recommendation, the decision is logged. If they choose someone else, the system asks for an override reason so the process remains explainable and traceable."
+
+"So the value of the demo is not just automation. It is explainable staffing intelligence that helps Parker move faster, reduce avoidable overtime, and make more defensible decisions under real operating constraints."
+
+
+==================================================
+19. HIGH-PROBABILITY QUESTIONS AND BEST ANSWERS
+==================================================
+
+Q1. What problem is this demo solving?
+
+Answer:
+"It solves two related staffing problems: building monthly coverage faster and handling same-day call-outs faster. In both cases, the goal is to reduce manual searching, reduce avoidable overtime, and make decisions more consistent and explainable."
+
+
+Q2. Is this really machine learning?
+
+Answer:
+"In the current demo, the safest description is AI-assisted decision support. It uses business-rule filtering, weighted scoring, and transparent rationale generation. That is deliberate, because in staffing and healthcare operations, explainability and control are very important."
+
+Optional stronger answer:
+"So rather than presenting it as a black-box predictive model, we present it as an explainable intelligence engine. That is usually more credible for this kind of use case."
+
+
+Q3. Why is overtime weighted the highest?
+
+Answer:
+"Because overtime is one of the most expensive and operationally sensitive staffing pressures. If two people are both clinically acceptable, the system should prefer the one who helps us avoid avoidable overtime."
+
+
+Q4. How do you stop unsafe assignments?
+
+Answer:
+"Unsafe options are removed before scoring. The engine filters out license mismatches, people already scheduled, people on PTO, unit exclusions, rest-window violations, and cases that would drop the source unit below its coverage floor."
+
+
+Q5. Does it consider certifications and licenses?
+
+Answer:
+"Yes. That is one of the first hard constraints. The engine only recommends people from the correct qualified bucket."
+
+
+Q6. Does it consider unit experience?
+
+Answer:
+"Yes, through home unit, unit typology, cross-training, and seniority. The current demo does not yet model resident-level acuity, but it does capture the major operational experience signals that drive staffing fit."
+
+
+Q7. Why would a Long-Term person not be ideal for Subacute?
+
+Answer:
+"Because Subacute is higher-acuity and more specialized. In the current scoring logic, Long-Term-only to Subacute is treated as a severe clinical mismatch, while Subacute to Long-Term is considered more acceptable."
+
+
+Q8. What if there are not enough people?
+
+Answer:
+"Then the system produces the best possible schedule from the available pool and surfaces the remaining gaps clearly. It does not hide staffing shortages with unsafe assignments."
+
+
+Q9. Does it remove human judgment?
+
+Answer:
+"No. It is explicitly human-in-the-loop. The system recommends and explains, but the coordinator makes the final decision."
+
+
+Q10. Why require a reason for selecting someone other than the top-ranked candidate?
+
+Answer:
+"Because that preserves accountability and helps track when human operational context outweighs the ranking. It also creates a record for future refinement."
+
+
+Q11. Does the system learn from overrides?
+
+Answer:
+"The current demo logs overrides and decisions, which creates the foundation for future learning and refinement. Right now the willingness signal is intentionally low-weight and neutral until enough history is available."
+
+
+Q12. Can the ranking priorities be changed?
+
+Answer:
+"Yes. The scoring weights are configurable. If Parker decides that a certain factor should matter more or less, those weights can be adjusted."
+
+
+Q13. Does proximity matter a lot?
+
+Answer:
+"It matters, but only lightly in the current configuration. It is mainly a tiebreaker. Parker's larger priorities are overtime control and clinical fit."
+
+
+Q14. What data does the system need?
+
+Answer:
+"It uses data that facilities already maintain: staff roster, licenses, employment class, home unit, cross-training, schedule entries, hours ledger, call-out records, PTO, exclusions, and unit information."
+
+
+Q15. What happens if the data in the database is outdated?
+
+Answer:
+"Then the recommendation quality will reflect that. The system depends on current staffing data, so good data hygiene and integration quality are important."
+
+
+Q16. Does the monthly scheduler already handle every future leave scenario?
+
+Answer:
+"Not every future scenario. The current demo focuses on the core scheduling and replacement logic first. Deeper leave-impact planning is one of the logical next refinements."
+
+
+Q17. Is the current UI the final product?
+
+Answer:
+"No. The current UI is enough to validate and demonstrate the workflow. The Marvel design represents a future design direction, but the purpose of this phase is to validate the algorithmic logic."
+
+
+Q18. Why is this better than a scheduler doing it manually?
+
+Answer:
+"Because it reduces memory-based decision making, applies the same rules consistently every time, surfaces better options faster, and explains the reasoning instead of depending on whoever happens to be on shift."
+
+
+Q19. Can this work with Parker's existing scheduling system?
+
+Answer:
+"That is the intended direction. The current demo is positioned as an intelligence layer that works alongside the existing scheduling workflow rather than replacing it outright."
+
+
+Q20. What is the strongest value shown in this demo today?
+
+Answer:
+"The strongest immediate value is same-day call-out support with explainable ranked replacements. That is the clearest operational win in the current phase."
+
+
+==================================================
+20. QUESTIONS YOUR TRAINER MAY ASK THAT NEED CAREFUL WORDING
+==================================================
+
+If asked:
+"Does it already handle leave requests that affect future months?"
+
+Say:
+"That is an important future refinement area. The current demo is strongest on current-state scheduling and same-day replacement logic."
+
+If asked:
+"Does it already understand resident acuity?"
+
+Say:
+"Not at resident level in the current phase. Right now the fit logic is unit-based, typology-based, licensing-based, and cross-training-based."
+
+If asked:
+"Does it automatically text or notify replacement staff?"
+
+Say:
+"Not in the current demo. That is a later-phase integration and workflow feature."
+
+If asked:
+"Is this replacing the current scheduler's judgment?"
+
+Say:
+"No. It is designed to support and speed up the scheduler, not remove the scheduler from the loop."
+
+
+==================================================
+21. SHORT VERSION IF YOU NEED A 2-MINUTE SUMMARY
+==================================================
+
+"This demo shows Parker Scheduling Intelligence solving two staffing problems: monthly schedule generation and same-day call-out replacement. The system uses explainable AI-assisted logic, not a black box. It first applies hard staffing rules, then ranks valid options using configurable priorities such as overtime headroom, clinical fit, and float impact. The result is faster staffing decisions, better overtime control, and a clear explanation of why each recommendation appears. The scheduler stays in control, and overrides are logged for accountability."
+
+
+==================================================
+22. FINAL CLOSING SCRIPT
+==================================================
+
+"To summarize, this demo shows that we can build an explainable scheduling intelligence layer that helps Parker generate monthly coverage more efficiently and respond to call-outs more effectively."
+
+"The current phase is intentionally focused on the operational logic first: who is eligible, who is the best fit, how overtime is controlled, and how recommendations are explained."
+
+"That gives us a strong foundation for customer feedback, because we can validate whether the priorities and decision logic match real staffing expectations before expanding into later features and final UI design."
+
+
+==================================================
+23. PRESENTER REMINDERS
+==================================================
+
+- Keep the introduction high level.
+- Spend most of your detail on the logic, not the visuals.
+- Use "AI-assisted" and "explainable" often.
+- Emphasize human-in-the-loop control.
+- Do not promise features that are not in the current demo.
+- If challenged on a future feature, say it is a planned refinement, not a current claim.
+- If pressed on ML, say this phase is intentionally rule-driven and explainable.
+- If pressed on the value, come back to speed, overtime, consistency, and transparency.
+
+
+==================================================
+24. ONE-LINE CHEAT SHEET
+==================================================
+
+"This demo shows an explainable AI-assisted staffing engine that generates monthly schedules, ranks same-day replacements, minimizes avoidable overtime, respects unit fit and staffing rules, and keeps the coordinator in control."

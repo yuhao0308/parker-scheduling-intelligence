@@ -297,8 +297,8 @@ async def generate_recommendations(
         target_unit_id=callout.unit_id,
         target_shift_label=callout.shift_label,
         target_shift_date=callout.shift_date,
-        ranked_candidates=[c.model_dump() for c in response_candidates],
-        filter_stats=filter_stats.model_dump(),
+        ranked_candidates=[c.model_dump(mode="json") for c in response_candidates],
+        filter_stats=filter_stats.model_dump(mode="json"),
     )
     db.add(rec_log)
     await db.flush()

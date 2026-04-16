@@ -79,7 +79,13 @@ async def generate_monthly_schedule(
 
     # Load all active units
     units_result = await db.execute(select(Unit).where(Unit.is_active == True))
-    units = list(units_result.scalars().all())
+    units = sorted(
+        units_result.scalars().all(),
+        key=lambda unit: (
+            0 if UnitTypology(unit.typology.value) == UnitTypology.SUBACUTE else 1,
+            unit.unit_id,
+        ),
+    )
 
     # Load staff pool
     staff_list = await load_staff_pool(db)

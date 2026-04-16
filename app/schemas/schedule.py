@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.schemas.common import ShiftLabel
 
@@ -79,6 +79,38 @@ class MonthlyScheduleOut(BaseModel):
     month: int
     days: List[DayScheduleOut]
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "year": 2026,
+                "month": 4,
+                "days": [
+                    {
+                        "date": "2026-04-01",
+                        "slots": [
+                            {
+                                "unit_id": "U-SA1",
+                                "unit_name": "Subacute Unit 1",
+                                "shift_date": "2026-04-01",
+                                "shift_label": "DAY",
+                                "status": "assigned",
+                                "assigned_employees": [
+                                    {
+                                        "employee_id": "RN200",
+                                        "name": "Dana Brown",
+                                        "license": "RN",
+                                    }
+                                ],
+                                "callout_count": 0,
+                                "callout_employee_ids": [],
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+    )
+
 
 class WorkHoursSummaryOut(BaseModel):
     employee_count: int
@@ -126,9 +158,30 @@ class GenerateScheduleRequest(BaseModel):
     month: int
     staff_count_override: Optional[int] = None
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "year": 2026,
+                "month": 4,
+                "staff_count_override": 20,
+            }
+        }
+    )
+
 
 class ScheduleGenerationResult(BaseModel):
     entries_created: int
     warnings: List[str]
     scenario: str
     unfilled_slots: int
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "entries_created": 1080,
+                "warnings": [],
+                "scenario": "ideal",
+                "unfilled_slots": 0,
+            }
+        }
+    )

@@ -18,7 +18,7 @@ def sample_candidates():
             name="Maria Rodriguez",
             license=LicenseType.RN,
             employment_class="FT",
-            zip_code="11375",  # close to facility
+            zip_code="11374",  # nearby, but not at the facility
             home_unit_id="U-SA1",
             home_unit_typology="SUBACUTE",
             cross_trained_unit_ids=["U-SA2"],
@@ -42,7 +42,7 @@ def sample_candidates():
             name="Aisha Johnson",
             license=LicenseType.CNA,
             employment_class="FT",
-            zip_code="11375",
+            zip_code="11374",
             home_unit_id="U-SA1",
             home_unit_typology="SUBACUTE",
             cross_trained_unit_ids=["U-SA2", "U-LT1"],
@@ -78,7 +78,7 @@ def sample_candidates():
             name="Mike Brown",
             license=LicenseType.CNA,
             employment_class="PER_DIEM",
-            zip_code="11375",
+            zip_code="11373",
             home_unit_id="U-SA2",
             home_unit_typology="SUBACUTE",
             cross_trained_unit_ids=["U-SA1"],

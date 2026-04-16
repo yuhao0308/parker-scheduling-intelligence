@@ -15,6 +15,18 @@ import httpx
 
 BASE_URL = "http://localhost:8000"
 
+UNIT_ZIP_CODES = {
+    "U-SA1": "11374",
+    "U-SA2": "11373",
+    "U-SA3": "11368",
+    "U-SA4": "11372",
+    "U-LT1": "11415",
+    "U-LT2": "11418",
+    "U-LT3": "11432",
+    "U-LT4": "11367",
+    "U-LT5": "11004",
+}
+
 
 def seed_units():
     """Seed units via a direct approach (no sync endpoint for units yet)."""
@@ -26,36 +38,36 @@ def seed_staff():
     """Seed ~26 staff members with varied profiles."""
     staff = [
         # Subacute RNs
-        {"employee_id": "RN001", "name": "Maria Rodriguez", "license": "RN", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-SA1", "cross_trained_units": ["U-SA2"], "hire_date": "2019-03-15"},
+        {"employee_id": "RN001", "name": "Maria Rodriguez", "license": "RN", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-SA1"], "home_unit_id": "U-SA1", "cross_trained_units": ["U-SA2"], "hire_date": "2019-03-15"},
         {"employee_id": "RN002", "name": "James Thompson", "license": "RN", "employment_class": "PT", "zip_code": "10301", "home_unit_id": "U-SA2", "cross_trained_units": ["U-SA1"], "hire_date": "2017-06-01"},
         {"employee_id": "RN003", "name": "Priya Patel", "license": "RN", "employment_class": "PER_DIEM", "zip_code": "11432", "home_unit_id": "U-SA1", "cross_trained_units": [], "hire_date": "2020-09-01"},
         {"employee_id": "RN004", "name": "Carlos Mendez", "license": "RN", "employment_class": "FT", "zip_code": "07030", "home_unit_id": "U-SA3", "cross_trained_units": ["U-SA1", "U-SA2"], "hire_date": "2015-01-10"},
         # LT RNs
-        {"employee_id": "RN005", "name": "Lisa Chen", "license": "RN", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-LT1", "cross_trained_units": [], "hire_date": "2021-02-15"},
+        {"employee_id": "RN005", "name": "Lisa Chen", "license": "RN", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-LT1"], "home_unit_id": "U-LT1", "cross_trained_units": [], "hire_date": "2021-02-15"},
         {"employee_id": "RN006", "name": "Robert Williams", "license": "RN", "employment_class": "PT", "zip_code": "11432", "home_unit_id": "U-LT2", "cross_trained_units": ["U-LT1"], "hire_date": "2018-11-01"},
         # LPNs
-        {"employee_id": "LPN001", "name": "Sarah Kim", "license": "LPN", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-LT3", "cross_trained_units": ["U-LT1", "U-LT2"], "hire_date": "2018-09-01"},
+        {"employee_id": "LPN001", "name": "Sarah Kim", "license": "LPN", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-LT3"], "home_unit_id": "U-LT3", "cross_trained_units": ["U-LT1", "U-LT2"], "hire_date": "2018-09-01"},
         {"employee_id": "LPN002", "name": "Angela Davis", "license": "LPN", "employment_class": "PER_DIEM", "zip_code": "10301", "home_unit_id": "U-LT4", "cross_trained_units": [], "hire_date": "2022-05-15"},
         {"employee_id": "LPN003", "name": "Mark Johnson", "license": "LPN", "employment_class": "FT", "zip_code": "07030", "home_unit_id": "U-SA4", "cross_trained_units": ["U-SA1"], "hire_date": "2019-07-01"},
         # Subacute CNAs
-        {"employee_id": "CNA001", "name": "Aisha Johnson", "license": "CNA", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-SA1", "cross_trained_units": ["U-SA2", "U-LT1"], "hire_date": "2020-06-01"},
-        {"employee_id": "CNA002", "name": "David Brown", "license": "CNA", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-SA1", "cross_trained_units": [], "hire_date": "2019-01-15"},
+        {"employee_id": "CNA001", "name": "Aisha Johnson", "license": "CNA", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-SA1"], "home_unit_id": "U-SA1", "cross_trained_units": ["U-SA2", "U-LT1"], "hire_date": "2020-06-01"},
+        {"employee_id": "CNA002", "name": "David Brown", "license": "CNA", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-SA1"], "home_unit_id": "U-SA1", "cross_trained_units": [], "hire_date": "2019-01-15"},
         {"employee_id": "CNA003", "name": "Fatima Ali", "license": "CNA", "employment_class": "FT", "zip_code": "11432", "home_unit_id": "U-SA2", "cross_trained_units": ["U-SA1"], "hire_date": "2021-03-01"},
         {"employee_id": "CNA004", "name": "Mike Smith", "license": "CNA", "employment_class": "PT", "zip_code": "10301", "home_unit_id": "U-SA2", "cross_trained_units": [], "hire_date": "2023-11-01"},
-        {"employee_id": "CNA005", "name": "Jennifer Garcia", "license": "CNA", "employment_class": "PER_DIEM", "zip_code": "11375", "home_unit_id": "U-SA3", "cross_trained_units": ["U-SA1", "U-SA2"], "hire_date": "2018-04-15"},
+        {"employee_id": "CNA005", "name": "Jennifer Garcia", "license": "CNA", "employment_class": "PER_DIEM", "zip_code": UNIT_ZIP_CODES["U-SA3"], "home_unit_id": "U-SA3", "cross_trained_units": ["U-SA1", "U-SA2"], "hire_date": "2018-04-15"},
         {"employee_id": "CNA006", "name": "Omar Hassan", "license": "CNA", "employment_class": "FT", "zip_code": "07030", "home_unit_id": "U-SA4", "cross_trained_units": [], "hire_date": "2025-12-01"},
         # LT CNAs
-        {"employee_id": "CNA007", "name": "Patricia Lee", "license": "CNA", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-LT1", "cross_trained_units": ["U-LT2"], "hire_date": "2019-08-01"},
+        {"employee_id": "CNA007", "name": "Patricia Lee", "license": "CNA", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-LT1"], "home_unit_id": "U-LT1", "cross_trained_units": ["U-LT2"], "hire_date": "2019-08-01"},
         {"employee_id": "CNA008", "name": "William Taylor", "license": "CNA", "employment_class": "FT", "zip_code": "11432", "home_unit_id": "U-LT1", "cross_trained_units": [], "hire_date": "2020-12-15"},
-        {"employee_id": "CNA009", "name": "Rosa Martinez", "license": "CNA", "employment_class": "PT", "zip_code": "11375", "home_unit_id": "U-LT2", "cross_trained_units": ["U-LT1", "U-LT3"], "hire_date": "2017-05-01"},
+        {"employee_id": "CNA009", "name": "Rosa Martinez", "license": "CNA", "employment_class": "PT", "zip_code": UNIT_ZIP_CODES["U-LT2"], "home_unit_id": "U-LT2", "cross_trained_units": ["U-LT1", "U-LT3"], "hire_date": "2017-05-01"},
         {"employee_id": "CNA010", "name": "Kevin Nguyen", "license": "CNA", "employment_class": "FT", "zip_code": "10301", "home_unit_id": "U-LT2", "cross_trained_units": [], "hire_date": "2022-02-01"},
-        {"employee_id": "CNA011", "name": "Diana Wilson", "license": "CNA", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-LT3", "cross_trained_units": ["U-LT4"], "hire_date": "2021-06-15"},
+        {"employee_id": "CNA011", "name": "Diana Wilson", "license": "CNA", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-LT3"], "home_unit_id": "U-LT3", "cross_trained_units": ["U-LT4"], "hire_date": "2021-06-15"},
         {"employee_id": "CNA012", "name": "Brian Clark", "license": "CNA", "employment_class": "PER_DIEM", "zip_code": "07030", "home_unit_id": "U-LT3", "cross_trained_units": [], "hire_date": "2023-01-01"},
         {"employee_id": "CNA013", "name": "Maria Santos", "license": "CNA", "employment_class": "FT", "zip_code": "11432", "home_unit_id": "U-LT4", "cross_trained_units": ["U-LT3"], "hire_date": "2018-10-01"},
-        {"employee_id": "CNA014", "name": "Thomas Anderson", "license": "CNA", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-LT4", "cross_trained_units": [], "hire_date": "2024-03-15"},
-        {"employee_id": "CNA015", "name": "Grace Park", "license": "CNA", "employment_class": "PT", "zip_code": "11375", "home_unit_id": "U-LT5", "cross_trained_units": ["U-LT4"], "hire_date": "2020-01-01"},
+        {"employee_id": "CNA014", "name": "Thomas Anderson", "license": "CNA", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-LT4"], "home_unit_id": "U-LT4", "cross_trained_units": [], "hire_date": "2024-03-15"},
+        {"employee_id": "CNA015", "name": "Grace Park", "license": "CNA", "employment_class": "PT", "zip_code": UNIT_ZIP_CODES["U-LT5"], "home_unit_id": "U-LT5", "cross_trained_units": ["U-LT4"], "hire_date": "2020-01-01"},
         # PCTs
-        {"employee_id": "PCT001", "name": "Ahmad Ibrahim", "license": "PCT", "employment_class": "FT", "zip_code": "11375", "home_unit_id": "U-SA1", "cross_trained_units": ["U-SA2"], "hire_date": "2021-09-01"},
+        {"employee_id": "PCT001", "name": "Ahmad Ibrahim", "license": "PCT", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-SA1"], "home_unit_id": "U-SA1", "cross_trained_units": ["U-SA2"], "hire_date": "2021-09-01"},
         {"employee_id": "PCT002", "name": "Nicole Brown", "license": "PCT", "employment_class": "FT", "zip_code": "11432", "home_unit_id": "U-LT5", "cross_trained_units": [], "hire_date": "2022-07-15"},
     ]
 

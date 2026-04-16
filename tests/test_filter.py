@@ -36,7 +36,7 @@ class TestLicenseFilter:
         from app.services.filter import CandidateRecord
         pct = CandidateRecord(
             employee_id="PCT001", name="Test PCT", license=LicenseType.PCT,
-            employment_class="FT", zip_code="11375", home_unit_id="U-LT1",
+            employment_class="FT", zip_code="11415", home_unit_id="U-LT1",
             home_unit_typology="LT", cross_trained_unit_ids=[], hire_date=date(2020, 1, 1),
             is_active=True,
         )

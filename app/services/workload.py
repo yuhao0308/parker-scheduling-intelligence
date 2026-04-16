@@ -5,7 +5,7 @@ from __future__ import annotations
 import calendar
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -109,8 +109,8 @@ def rn_overtime_status(
         if double_shift_days > 0:
             detail.append(f"{double_shift_days} double-shift day")
         return "high_ot", ", ".join(detail) + "."
-    if double_shift_days > 0 or peak_biweekly_shifts > BIWEEKLY_SHIFT_OT_THRESHOLD:
-        return "overtime", "Daily or biweekly OT is projected in this month."
+    if double_shift_days > 0:
+        return "overtime", "Daily OT is projected in this month."
     if peak_biweekly_shifts >= BIWEEKLY_SHIFT_OT_THRESHOLD - 1:
         return "near_ot", "Within one shift of the RN biweekly OT limit."
     return "healthy", "No OT pressure in this month."
@@ -125,6 +125,10 @@ async def build_work_hours_snapshot(
     first = date(year, month, 1)
     last = date(year, month, last_day)
 
+    # Expand to complete ISO weeks so boundary-week OT is not underestimated
+    query_start = first - timedelta(days=first.isocalendar().weekday - 1)
+    query_end = last + timedelta(days=7 - last.isocalendar().weekday)
+
     staff_result = await db.execute(
         select(StaffMaster, StaffOps)
         .outerjoin(StaffOps, StaffMaster.employee_id == StaffOps.employee_id)
@@ -134,7 +138,7 @@ async def build_work_hours_snapshot(
     staff_rows = staff_result.all()
 
     entries_result = await db.execute(
-        select(ScheduleEntry).where(ScheduleEntry.shift_date.between(first, last))
+        select(ScheduleEntry).where(ScheduleEntry.shift_date.between(query_start, query_end))
     )
     entries = entries_result.scalars().all()
 
@@ -151,8 +155,11 @@ async def build_work_hours_snapshot(
             latest_hours[row.employee_id] = row
 
     entry_map: dict[str, list[ScheduleEntry]] = defaultdict(list)
+    ot_entry_map: dict[str, list[ScheduleEntry]] = defaultdict(list)
     for entry in entries:
-        entry_map[entry.employee_id].append(entry)
+        ot_entry_map[entry.employee_id].append(entry)
+        if first <= entry.shift_date <= last:
+            entry_map[entry.employee_id].append(entry)
 
     callout_counts: dict[str, int] = defaultdict(int)
     for callout in callouts:
@@ -167,18 +174,16 @@ async def build_work_hours_snapshot(
 
     for staff, ops in staff_rows:
         employee_entries = entry_map.get(staff.employee_id, [])
+        ot_entries = ot_entry_map.get(staff.employee_id, [])
         unit_counter: Counter[str] = Counter()
-        shift_dates: list[date] = []
-        rn_shifts: list[tuple[date, str]] = []
         home_unit_shifts = 0
         float_shifts = 0
 
         for entry in employee_entries:
-            shift_dates.append(entry.shift_date)
-            label = entry.shift_label.value if hasattr(entry.shift_label, "value") else str(entry.shift_label)
-            rn_shifts.append((entry.shift_date, label))
             unit_counter[entry.unit_id] += 1
-            if ops and entry.unit_id == ops.home_unit_id:
+            if not ops:
+                continue
+            if entry.unit_id == ops.home_unit_id:
                 home_unit_shifts += 1
             else:
                 float_shifts += 1
@@ -198,6 +203,10 @@ async def build_work_hours_snapshot(
         anchor_date = cycle_anchor.cycle_start_date if cycle_anchor else first
 
         if staff.license == LicenseType.RN:
+            rn_shifts = [
+                (e.shift_date, e.shift_label.value if hasattr(e.shift_label, "value") else str(e.shift_label))
+                for e in ot_entries
+            ]
             double_shift_days, peak_biweekly_shifts, projected_overtime_shifts = summarize_rn_schedule(
                 rn_shifts,
                 anchor_date,
@@ -208,6 +217,7 @@ async def build_work_hours_snapshot(
                 projected_overtime_shifts,
             )
         else:
+            shift_dates = [e.shift_date for e in ot_entries]
             peak_week_hours, projected_overtime_hours = summarize_standard_schedule(shift_dates)
             overtime_status, overtime_detail = standard_overtime_status(
                 peak_week_hours,

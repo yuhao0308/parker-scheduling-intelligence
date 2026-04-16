@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,6 +46,15 @@ class Settings(BaseSettings):
     ukg_client_id: str = ""
     ukg_client_secret: str = ""
     ukg_write_back_enabled: bool = False
+
+    @field_validator("database_url")
+    @classmethod
+    def _force_asyncpg(cls, v: str) -> str:
+        if v.startswith("postgres://"):
+            return "postgresql+asyncpg://" + v[len("postgres://"):]
+        if v.startswith("postgresql://") and "+asyncpg" not in v:
+            return "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
 
 
 settings = Settings()

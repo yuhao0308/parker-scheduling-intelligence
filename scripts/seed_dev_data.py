@@ -8,12 +8,13 @@ Usage:
 """
 from __future__ import annotations
 
+import os
 import sys
 from datetime import date, datetime, timezone
 
 import httpx
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 
 UNIT_ZIP_CODES = {
     "U-SA1": "11374",
@@ -47,7 +48,7 @@ def seed_staff():
         {"employee_id": "RN006", "name": "Robert Williams", "license": "RN", "employment_class": "PT", "zip_code": "11432", "home_unit_id": "U-LT2", "cross_trained_units": ["U-LT1"], "hire_date": "2018-11-01"},
         # LPNs
         {"employee_id": "LPN001", "name": "Sarah Kim", "license": "LPN", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-LT3"], "home_unit_id": "U-LT3", "cross_trained_units": ["U-LT1", "U-LT2"], "hire_date": "2018-09-01"},
-        {"employee_id": "LPN002", "name": "Angela Davis", "license": "LPN", "employment_class": "PER_DIEM", "zip_code": "10301", "home_unit_id": "U-LT4", "cross_trained_units": [], "hire_date": "2022-05-15"},
+        {"employee_id": "LPN002", "name": "Angela Davis", "license": "LPN", "employment_class": "PT", "zip_code": "10301", "home_unit_id": "U-LT4", "cross_trained_units": [], "hire_date": "2022-05-15"},
         {"employee_id": "LPN003", "name": "Mark Johnson", "license": "LPN", "employment_class": "FT", "zip_code": "07030", "home_unit_id": "U-SA4", "cross_trained_units": ["U-SA1"], "hire_date": "2019-07-01"},
         # Subacute CNAs
         {"employee_id": "CNA001", "name": "Aisha Johnson", "license": "CNA", "employment_class": "FT", "zip_code": UNIT_ZIP_CODES["U-SA1"], "home_unit_id": "U-SA1", "cross_trained_units": ["U-SA2", "U-LT1"], "hire_date": "2020-06-01"},

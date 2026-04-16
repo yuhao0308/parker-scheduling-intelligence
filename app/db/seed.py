@@ -40,6 +40,9 @@ SHIFT_WINDOWS = [
 async def seed_units():
     """Create units and shift windows if they don't exist."""
     async with async_session_factory() as db:
+        # Insert all units first and flush so shift_window FKs are satisfied
+        # before the next iteration's autoflush tries to insert them.
+        new_unit_ids: list[str] = []
         for unit_id, name, typology, ratio in UNITS:
             existing = await db.get(Unit, unit_id)
             if not existing:
@@ -47,15 +50,18 @@ async def seed_units():
                     unit_id=unit_id, name=name,
                     typology=typology, required_ratio=ratio,
                 ))
+                new_unit_ids.append(unit_id)
+        await db.flush()
 
-                for label, start, end in SHIFT_WINDOWS:
-                    db.add(ShiftWindow(
-                        unit_id=unit_id, shift_label=label,
-                        start_time=start, end_time=end,
-                    ))
+        for unit_id in new_unit_ids:
+            for label, start, end in SHIFT_WINDOWS:
+                db.add(ShiftWindow(
+                    unit_id=unit_id, shift_label=label,
+                    start_time=start, end_time=end,
+                ))
 
         await db.commit()
-        print(f"Seeded {len(UNITS)} units with shift windows.")
+        print(f"Seeded {len(new_unit_ids)} new units (of {len(UNITS)} total).")
 
 
 if __name__ == "__main__":

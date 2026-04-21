@@ -60,6 +60,28 @@ async def list_units(db: Annotated[AsyncSession, DbSession]):
     return [UnitOut(unit_id=u.unit_id, name=u.name, typology=u.typology.value) for u in units]
 
 
+@router.get("/staff", response_model=List[StaffOut])
+async def list_all_active_staff(db: Annotated[AsyncSession, DbSession]):
+    """All active staff across units — feeds the Auto-Gen pool picker."""
+    result = await db.execute(
+        select(StaffMaster, StaffOps)
+        .outerjoin(StaffOps, StaffMaster.employee_id == StaffOps.employee_id)
+        .where(StaffMaster.is_active == True)
+        .order_by(StaffMaster.name)
+    )
+    rows = result.all()
+    return [
+        StaffOut(
+            employee_id=staff.employee_id,
+            name=staff.name,
+            license=staff.license.value,
+            employment_class=staff.employment_class.value,
+            home_unit_id=ops.home_unit_id if ops else None,
+        )
+        for staff, ops in rows
+    ]
+
+
 @router.get("/units/{unit_id}/staff", response_model=List[StaffOut])
 async def list_staff_for_unit(unit_id: str, db: Annotated[AsyncSession, DbSession]):
     result = await db.execute(

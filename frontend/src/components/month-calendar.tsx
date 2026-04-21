@@ -1,7 +1,13 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { MonthlySchedule, ShiftSlot } from "@/lib/types";
+import type {
+  CalloutDayCount,
+  ConfirmationStatus,
+  MonthlySchedule,
+  ShiftSlot,
+} from "@/lib/types";
+import { StatusOrb } from "@/components/schedule/status-orb";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -22,6 +28,29 @@ interface MonthCalendarProps {
   isLoading: boolean;
   onSlotClick: (slot: ShiftSlot) => void;
   selectedUnit: string | null;
+  /** Optional per-day callout rollup (feeds the red day dot indicator). */
+  calloutsByDate?: CalloutDayCount[];
+}
+
+const STATUS_PRIORITY: Record<ConfirmationStatus, number> = {
+  DECLINED: 5,
+  PENDING: 4,
+  UNSENT: 3,
+  ACCEPTED: 2,
+  REPLACED: 1,
+};
+
+/** Pick the most actionable confirmation status among a slot's assignees. */
+function slotStatus(slot: ShiftSlot): ConfirmationStatus | null {
+  let best: ConfirmationStatus | null = null;
+  for (const e of slot.assigned_employees) {
+    const s = e.confirmation_status;
+    if (!s) continue;
+    if (!best || STATUS_PRIORITY[s] > STATUS_PRIORITY[best]) {
+      best = s;
+    }
+  }
+  return best;
 }
 
 function getUnitShort(unitId: string): string {
@@ -49,7 +78,11 @@ export function MonthCalendar({
   isLoading,
   onSlotClick,
   selectedUnit,
+  calloutsByDate,
 }: MonthCalendarProps) {
+  const calloutMap = new Map(
+    (calloutsByDate ?? []).map((c) => [c.date, c]),
+  );
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96 text-muted-foreground">
@@ -107,6 +140,8 @@ export function MonthCalendar({
           const dayNum = new Date(day.date + "T00:00:00").getDate();
           const byUnit = summarizeDaySlots(day.slots, selectedUnit);
           const isWeekend = cellIdx % 7 === 0 || cellIdx % 7 === 6;
+          const callout = calloutMap.get(day.date);
+          const hasActiveCallout = (callout?.active ?? 0) > 0;
 
           return (
             <div
@@ -116,8 +151,17 @@ export function MonthCalendar({
                 isWeekend && "bg-muted/10"
               )}
             >
-              <div className="text-xs font-medium text-muted-foreground mb-1">
-                {dayNum}
+              <div className="flex items-center gap-1 mb-1">
+                <span className="text-xs font-medium text-muted-foreground">
+                  {dayNum}
+                </span>
+                {hasActiveCallout && (
+                  <span
+                    aria-label={`${callout!.active} active callout${callout!.active === 1 ? "" : "s"}`}
+                    title={`${callout!.active} active / ${callout!.total} total`}
+                    className="h-1.5 w-1.5 rounded-full bg-red-500"
+                  />
+                )}
               </div>
               <div className="space-y-0.5">
                 {Array.from(byUnit.entries())
@@ -127,19 +171,31 @@ export function MonthCalendar({
                       <span className="text-[10px] text-muted-foreground w-7 shrink-0 truncate">
                         {getUnitShort(unitId)}
                       </span>
-                      {unitSlots.map((slot) => (
-                        <button
-                          key={`${slot.unit_id}-${slot.shift_label}`}
-                          onClick={() => onSlotClick(slot)}
-                          className={cn(
-                            "text-[9px] font-medium px-1 py-0.5 rounded border cursor-pointer transition-opacity hover:opacity-80",
-                            STATUS_CLASSES[slot.status]
-                          )}
-                          title={`${slot.unit_name} ${slot.shift_label} — ${slot.status} (${slot.assigned_employees.length} staff)`}
-                        >
-                          {SHIFT_SHORT[slot.shift_label] ?? slot.shift_label[0]}
-                        </button>
-                      ))}
+                      {unitSlots.map((slot) => {
+                        const status = slotStatus(slot);
+                        return (
+                          <button
+                            key={`${slot.unit_id}-${slot.shift_label}`}
+                            onClick={() => onSlotClick(slot)}
+                            className={cn(
+                              "text-[9px] font-medium px-1 py-0.5 rounded border cursor-pointer transition-opacity hover:opacity-80 inline-flex items-center gap-0.5",
+                              STATUS_CLASSES[slot.status]
+                            )}
+                            title={`${slot.unit_name} ${slot.shift_label} — ${slot.status} (${slot.assigned_employees.length} staff)${status ? ` · ${status}` : ""}`}
+                          >
+                            {status && (
+                              <StatusOrb
+                                status={status}
+                                className="!h-1.5 !w-1.5"
+                              />
+                            )}
+                            <span>
+                              {SHIFT_SHORT[slot.shift_label] ??
+                                slot.shift_label[0]}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   ))}
                 {!selectedUnit && byUnit.size > 4 && (

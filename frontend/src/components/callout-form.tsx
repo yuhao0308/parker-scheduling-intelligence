@@ -16,18 +16,37 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useUnits, useStaffForUnit } from "@/lib/queries";
 import { typologyLabel, type CalloutRequest, type ShiftLabel } from "@/lib/types";
 
+interface CalloutFormInitialValues {
+  unit_id?: string;
+  shift_label?: ShiftLabel;
+  shift_date?: string;
+  employee_id?: string;
+}
+
 interface CalloutFormProps {
   onSubmit: (req: CalloutRequest) => void;
   isPending: boolean;
+  /** Values to prefill on mount (typically from ?date=&unit_id=&shift=). */
+  initialValues?: CalloutFormInitialValues;
 }
 
-export function CalloutForm({ onSubmit, isPending }: CalloutFormProps) {
-  const [unitId, setUnitId] = useState<string | null>(null);
-  const [shiftLabel, setShiftLabel] = useState<ShiftLabel>("DAY");
-  const [shiftDate, setShiftDate] = useState(
-    new Date().toISOString().split("T")[0]
+export function CalloutForm({
+  onSubmit,
+  isPending,
+  initialValues,
+}: CalloutFormProps) {
+  const [unitId, setUnitId] = useState<string | null>(
+    initialValues?.unit_id ?? null,
   );
-  const [employeeId, setEmployeeId] = useState<string | null>(null);
+  const [shiftLabel, setShiftLabel] = useState<ShiftLabel>(
+    initialValues?.shift_label ?? "DAY",
+  );
+  const [shiftDate, setShiftDate] = useState(
+    initialValues?.shift_date ?? new Date().toISOString().split("T")[0],
+  );
+  const [employeeId, setEmployeeId] = useState<string | null>(
+    initialValues?.employee_id ?? null,
+  );
 
   const { data: units, isLoading: unitsLoading } = useUnits();
   const { data: staff, isLoading: staffLoading } = useStaffForUnit(unitId);

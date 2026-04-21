@@ -84,9 +84,12 @@ async def build_schedule_context(
     date_range_start = target_date - timedelta(days=1)
     date_range_end = target_date + timedelta(days=1)
 
+    from app.models.schedule import ConfirmationStatus
+
     result = await db.execute(
         select(ScheduleEntry).where(
-            ScheduleEntry.shift_date.between(date_range_start, date_range_end)
+            ScheduleEntry.shift_date.between(date_range_start, date_range_end),
+            ScheduleEntry.confirmation_status != ConfirmationStatus.REPLACED,
         )
     )
     entries = result.scalars().all()

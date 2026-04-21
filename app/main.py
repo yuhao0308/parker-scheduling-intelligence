@@ -12,7 +12,17 @@ import asyncio
 
 from app.config import settings
 from app.exceptions import AppError
-from app.routes import admin, callout, health, lookup, overrides, schedule, sync
+from app.routes import (
+    admin,
+    callout,
+    confirmation,
+    health,
+    lookup,
+    overrides,
+    schedule,
+    sync,
+    system,
+)
 from app.services.rationale import warm_ollama
 
 logger = structlog.get_logger()
@@ -58,6 +68,8 @@ app.include_router(sync.router)
 app.include_router(admin.router)
 app.include_router(lookup.router)
 app.include_router(schedule.router)
+app.include_router(confirmation.router)
+app.include_router(system.router)
 
 
 @app.exception_handler(AppError)

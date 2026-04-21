@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,19 +10,52 @@ import { Badge } from "@/components/ui/badge";
 import { CalloutForm } from "@/components/callout-form";
 import { CandidateList } from "@/components/candidate-list";
 import { FilterStatsBadge } from "@/components/filter-stats-badge";
-import { OverrideDialog } from "@/components/override-dialog";
-import { useSubmitCallout, useSubmitOverride } from "@/lib/queries";
-import type { CalloutRequest, CalloutResponse, ScoredCandidate } from "@/lib/types";
+import { OutreachConsole } from "@/components/callout/outreach-console";
+import { useSendOutreach, useSubmitCallout } from "@/lib/queries";
+import type {
+  CalloutRequest,
+  CalloutResponse,
+  ScoredCandidate,
+  ShiftLabel,
+} from "@/lib/types";
+
+const VALID_SHIFTS: readonly ShiftLabel[] = ["DAY", "EVENING", "NIGHT"];
 
 export default function CalloutPage() {
+  // useSearchParams requires a Suspense boundary under Next's async routing.
+  return (
+    <Suspense fallback={null}>
+      <CalloutPageInner />
+    </Suspense>
+  );
+}
+
+function CalloutPageInner() {
+  const searchParams = useSearchParams();
+
+  // Prefill values from deep-link query: date / unit_id / shift / employee_id.
+  const initialValues = useMemo(() => {
+    const date = searchParams.get("date") ?? undefined;
+    const unit_id = searchParams.get("unit_id") ?? undefined;
+    const shiftRaw = searchParams.get("shift") ?? undefined;
+    const shift_label = VALID_SHIFTS.includes(shiftRaw as ShiftLabel)
+      ? (shiftRaw as ShiftLabel)
+      : undefined;
+    const employee_id = searchParams.get("employee_id") ?? undefined;
+    return {
+      shift_date: date,
+      unit_id,
+      shift_label,
+      employee_id,
+    };
+  }, [searchParams]);
+
   const [coordinatorId, setCoordinatorId] = useState("");
   const [result, setResult] = useState<CalloutResponse | null>(null);
-  const [overrideCandidate, setOverrideCandidate] = useState<ScoredCandidate | null>(null);
-  const [overrideOpen, setOverrideOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   const calloutMutation = useSubmitCallout();
-  const overrideMutation = useSubmitOverride();
+  const sendOutreachMutation = useSendOutreach();
 
   function handleCalloutSubmit(req: CalloutRequest) {
     calloutMutation.mutate(req, {
@@ -30,46 +64,25 @@ export default function CalloutPage() {
   }
 
   function handleSelect(candidate: ScoredCandidate) {
+    // Selecting a candidate now triggers simulated SMS outreach rather than
+    // immediately logging an override. The OutreachConsole below drives
+    // accept/decline/timeout from there.
     if (!result) return;
-    if (candidate.rank === 1) {
-      overrideMutation.mutate(
-        {
-          recommendation_log_id: result.recommendation_log_id,
-          selected_employee_id: candidate.employee_id,
-          coordinator_id: coordinatorId || "unknown",
-        },
-        { onSuccess: () => setSubmitted(true) },
-      );
-    } else {
-      setOverrideCandidate(candidate);
-      setOverrideOpen(true);
-    }
-  }
-
-  function handleOverrideConfirm(reason: string) {
-    if (!result || !overrideCandidate) return;
-    overrideMutation.mutate(
-      {
+    sendOutreachMutation.mutate({
+      calloutId: result.callout_id,
+      req: {
         recommendation_log_id: result.recommendation_log_id,
-        selected_employee_id: overrideCandidate.employee_id,
-        coordinator_id: coordinatorId || "unknown",
-        override_reason: reason,
+        candidate_employee_id: candidate.employee_id,
+        rank: candidate.rank,
       },
-      {
-        onSuccess: () => {
-          setOverrideOpen(false);
-          setSubmitted(true);
-        },
-      },
-    );
+    });
   }
 
   function handleReset() {
     setResult(null);
     setSubmitted(false);
-    setOverrideCandidate(null);
     calloutMutation.reset();
-    overrideMutation.reset();
+    sendOutreachMutation.reset();
   }
 
   return (
@@ -107,6 +120,7 @@ export default function CalloutPage() {
           <CalloutForm
             onSubmit={handleCalloutSubmit}
             isPending={calloutMutation.isPending}
+            initialValues={initialValues}
           />
           {calloutMutation.isError && (
             <Card className="border-destructive">
@@ -139,26 +153,23 @@ export default function CalloutPage() {
               <CandidateList
                 candidates={result.candidates}
                 onSelect={handleSelect}
-                disabled={overrideMutation.isPending}
+                disabled={sendOutreachMutation.isPending}
               />
             </CardContent>
           </Card>
 
-          {overrideMutation.isError && (
+          <OutreachConsole
+            result={result}
+            onAccepted={() => setSubmitted(true)}
+          />
+
+          {sendOutreachMutation.isError && (
             <Card className="border-destructive">
               <CardContent className="py-4 text-destructive text-sm">
-                {overrideMutation.error.message}
+                {(sendOutreachMutation.error as Error)?.message ?? "Outreach failed."}
               </CardContent>
             </Card>
           )}
-
-          <OverrideDialog
-            candidate={overrideCandidate}
-            open={overrideOpen}
-            onOpenChange={setOverrideOpen}
-            onConfirm={handleOverrideConfirm}
-            isPending={overrideMutation.isPending}
-          />
         </div>
       )}
     </div>

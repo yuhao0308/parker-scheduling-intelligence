@@ -47,6 +47,34 @@ class Settings(BaseSettings):
     ukg_client_secret: str = ""
     ukg_write_back_enabled: bool = False
 
+    # Demo-mode timer policy. Real production values are 2h for weekly
+    # confirmations and 15min for callout outreach. In demo mode we
+    # fake-fire everything at 15s so the judge sees the countdown tick;
+    # the labels stay truthful so the supervisor sees the intended UX.
+    demo_mode: bool = True
+    confirmation_timeout_seconds_prod: int = 7200      # 2 hours
+    outreach_timeout_seconds_prod: int = 900           # 15 minutes
+    confirmation_timeout_seconds_demo: int = 15
+    outreach_timeout_seconds_demo: int = 15
+    confirmation_timeout_label: str = "2 hours"
+    outreach_timeout_label: str = "15 minutes"
+
+    @property
+    def confirmation_timeout_seconds(self) -> int:
+        return (
+            self.confirmation_timeout_seconds_demo
+            if self.demo_mode
+            else self.confirmation_timeout_seconds_prod
+        )
+
+    @property
+    def outreach_timeout_seconds(self) -> int:
+        return (
+            self.outreach_timeout_seconds_demo
+            if self.demo_mode
+            else self.outreach_timeout_seconds_prod
+        )
+
     @field_validator("database_url")
     @classmethod
     def _force_asyncpg(cls, v: str) -> str:

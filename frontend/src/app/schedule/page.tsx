@@ -14,9 +14,29 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { MonthCalendar } from "@/components/month-calendar";
 import { ShiftDetailDialog } from "@/components/shift-detail-dialog";
-import { useMonthlySchedule, useGenerateSchedule, useUnits } from "@/lib/queries";
-import type { ShiftSlot } from "@/lib/types";
+import { OperatorPanel } from "@/components/schedule/operator-panel";
+import { ReplacementDialog } from "@/components/schedule/replacement-dialog";
+import {
+  useCalloutsByMonth,
+  useGenerateSchedule,
+  useMonthlySchedule,
+  useUnits,
+} from "@/lib/queries";
+import type {
+  CalloutResponse,
+  ConfirmationEntry,
+  ShiftSlot,
+} from "@/lib/types";
 import { useWorkHoursMonitor } from "@/providers/work-hours-provider";
+
+function defaultWeekStart(today = new Date()): string {
+  const d = new Date(today);
+  d.setHours(0, 0, 0, 0);
+  const dow = d.getDay(); // 0=Sun
+  const diffToMonday = (dow + 6) % 7;
+  d.setDate(d.getDate() - diffToMonday);
+  return d.toISOString().slice(0, 10);
+}
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -36,11 +56,18 @@ export default function SchedulePage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [scenarioIdx, setScenarioIdx] = useState(0);
+  const [weekStart, setWeekStart] = useState(() => defaultWeekStart());
+  const [replacementEntry, setReplacementEntry] =
+    useState<ConfirmationEntry | null>(null);
+  const [replacementData, setReplacementData] =
+    useState<CalloutResponse | null>(null);
   const { setScope } = useWorkHoursMonitor();
 
   const { data, isLoading } = useMonthlySchedule(year, month);
   const generateMutation = useGenerateSchedule();
   const { data: units } = useUnits();
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const { data: calloutRollup = [] } = useCalloutsByMonth(monthStr);
 
   const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
 
@@ -87,9 +114,9 @@ export default function SchedulePage() {
   }
 
   return (
-    <div className="w-full space-y-4">
+    <div className="w-full space-y-4 schedule-page">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between no-print">
         <div className="flex items-center gap-3">
           <Button variant="outline" size="sm" onClick={prevMonth}>
             &larr;
@@ -115,6 +142,13 @@ export default function SchedulePage() {
               </option>
             ))}
           </select>
+          <Button
+            variant="outline"
+            onClick={() => window.print()}
+            title="Print weekly schedule"
+          >
+            Print
+          </Button>
           <Button onClick={() => setGenerateOpen(true)}>
             Generate Schedule
           </Button>
@@ -123,7 +157,7 @@ export default function SchedulePage() {
 
       {/* Status summary */}
       {data && (
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 no-print">
           <Badge className="bg-emerald-100 text-emerald-800" variant="secondary">
             {statusCounts.assigned} Assigned
           </Badge>
@@ -138,7 +172,7 @@ export default function SchedulePage() {
 
       {/* Generation result */}
       {generateMutation.isSuccess && generateMutation.data && (
-        <Card>
+        <Card className="no-print">
           <CardContent className="py-3">
             <div className="flex items-center gap-3 text-sm">
               <Badge
@@ -178,23 +212,57 @@ export default function SchedulePage() {
         </Card>
       )}
 
-      {/* Calendar */}
-      <Card>
-        <CardContent className="p-2">
-          <MonthCalendar
-            data={data}
-            isLoading={isLoading}
-            onSlotClick={handleSlotClick}
-            selectedUnit={selectedUnit}
+      {/* Calendar + Operator side panel */}
+      <div className="grid gap-4 lg:grid-cols-[2fr_1fr] schedule-grid">
+        <Card className="schedule-calendar-card">
+          <CardContent className="p-2">
+            <MonthCalendar
+              data={data}
+              isLoading={isLoading}
+              onSlotClick={handleSlotClick}
+              selectedUnit={selectedUnit}
+              calloutsByDate={calloutRollup}
+            />
+          </CardContent>
+        </Card>
+
+        <div className="no-print">
+          <OperatorPanel
+            year={year}
+            month={month}
+            weekStart={weekStart}
+            onWeekStartChange={setWeekStart}
+            onDeclineReplacement={(entry, replacement) => {
+              setReplacementEntry(entry);
+              setReplacementData(replacement);
+            }}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Shift detail dialog */}
       <ShiftDetailDialog
         slot={activeSlot}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+      />
+
+      {/* Replacement dialog */}
+      <ReplacementDialog
+        open={!!replacementEntry && !!replacementData}
+        onOpenChange={(o) => {
+          if (!o) {
+            setReplacementEntry(null);
+            setReplacementData(null);
+          }
+        }}
+        entry={replacementEntry}
+        replacement={replacementData}
+        weekStart={weekStart}
+        onReplaced={() => {
+          setReplacementEntry(null);
+          setReplacementData(null);
+        }}
       />
 
       {/* Generate schedule dialog */}

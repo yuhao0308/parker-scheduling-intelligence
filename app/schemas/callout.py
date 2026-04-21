@@ -112,3 +112,11 @@ class OverrideResponse(BaseModel):
     selected_rank: Optional[int]
     writeback_status: Optional[str] = None
     writeback_detail: Optional[str] = None
+
+
+class CalloutDayCount(BaseModel):
+    """Per-date callout rollup feeding calendar red-dot indicators."""
+
+    date: date
+    total: int
+    active: int  # callouts without an accepted replacement entry yet

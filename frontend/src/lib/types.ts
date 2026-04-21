@@ -107,10 +107,19 @@ export interface RecentCallout {
 
 // --- Monthly schedule types ---
 
+export type ConfirmationStatus =
+  | "UNSENT"
+  | "PENDING"
+  | "ACCEPTED"
+  | "DECLINED"
+  | "REPLACED";
+
 export interface AssignedEmployee {
   employee_id: string;
   name: string;
   license: string;
+  entry_id?: number;
+  confirmation_status?: ConfirmationStatus;
 }
 
 export interface ShiftSlot {
@@ -180,6 +189,7 @@ export interface GenerateScheduleRequest {
   year: number;
   month: number;
   staff_count_override?: number;
+  employee_pool?: string[];
 }
 
 export interface GenerateScheduleResult {
@@ -187,6 +197,165 @@ export interface GenerateScheduleResult {
   warnings: string[];
   scenario: string;
   unfilled_slots: number;
+}
+
+export interface RegenerateWeekRequest {
+  week_start: string;
+  employee_pool: string[];
+  preserve_pending?: boolean;
+}
+
+export interface RegenerateWeekResult {
+  week_start: string;
+  entries_generated: number;
+  slots_frozen: number;
+  warnings: string[];
+}
+
+export interface AutogenSubmitRequest {
+  week_start: string;
+  employee_pool: string[];
+  preserve_pending?: boolean;
+}
+
+export interface AutogenSubmitResult {
+  week_start: string;
+  entries_generated: number;
+  slots_frozen: number;
+  notifications_sent: number;
+  entries_marked: number;
+  counts_by_status: StatusCounts;
+  warnings: string[];
+}
+
+export interface DemoConfig {
+  demo_mode: boolean;
+  confirmation_timeout_seconds: number;
+  confirmation_timeout_label: string;
+  outreach_timeout_seconds: number;
+  outreach_timeout_label: string;
+}
+
+// --- Confirmation flow types ---
+
+export interface StatusCounts {
+  unsent: number;
+  pending: number;
+  accepted: number;
+  declined: number;
+  replaced: number;
+}
+
+export interface SendConfirmationsRequest {
+  week_start: string;
+  unit_ids?: string[];
+}
+
+export interface SendConfirmationsResult {
+  week_start: string;
+  entries_marked: number;
+  notifications_created: number;
+  counts_by_status: StatusCounts;
+}
+
+export interface ConfirmationEntry {
+  entry_id: number;
+  employee_id: string;
+  name: string;
+  license: string;
+  unit_id: string;
+  unit_name: string;
+  shift_date: string;
+  shift_label: ShiftLabel;
+  confirmation_status: ConfirmationStatus;
+  confirmation_sent_at: string | null;
+  confirmation_responded_at: string | null;
+  latest_notification_id: number | null;
+}
+
+export interface ConfirmationList {
+  week_start: string;
+  entries: ConfirmationEntry[];
+  summary: StatusCounts;
+}
+
+export type ConfirmationResponse = "ACCEPTED" | "DECLINED" | "TIMEOUT";
+
+export interface RespondConfirmationRequest {
+  response: ConfirmationResponse;
+}
+
+export interface RespondConfirmationResult {
+  entry_id: number;
+  new_status: ConfirmationStatus;
+  replacement: CalloutResponse | null;
+}
+
+export interface ReplaceEntryRequest {
+  recommendation_log_id: number;
+  selected_employee_id: string;
+  selected_rank?: number;
+}
+
+export interface ReplaceEntryResult {
+  old_entry_id: number;
+  new_entry_id: number;
+  new_status: ConfirmationStatus;
+}
+
+export interface RemoveEntryResult {
+  entry_id: number;
+  new_status: ConfirmationStatus;
+  slot_now_open: boolean;
+  canceled_notification_id: number | null;
+}
+
+// --- Outreach (last-minute callout) flow types ---
+
+export type OutreachResponse = "ACCEPTED" | "DECLINED" | "TIMEOUT" | "SKIPPED";
+
+export interface SendOutreachRequest {
+  recommendation_log_id: number;
+  candidate_employee_id: string;
+  rank?: number;
+}
+
+export interface SendOutreachResult {
+  notification_id: number;
+  callout_id: number;
+  employee_id: string;
+  rank: number | null;
+  status: string;
+}
+
+export interface RespondOutreachRequest {
+  response: OutreachResponse;
+  rank?: number;
+  override_reason?: string;
+}
+
+export interface OutreachNotification {
+  notification_id: number;
+  employee_id: string;
+  status: string;
+  created_at: string;
+  responded_at: string | null;
+  rank: number | null;
+  payload_text: string | null;
+}
+
+export interface RespondOutreachResult {
+  notification_id: number;
+  status: string;
+  assigned_entry_id: number | null;
+  canceled_notification_ids: number[];
+  deprioritized_employee_ids: string[];
+}
+
+export interface CalloutDayCount {
+  date: string;
+  total: number;
+  active: number;
 }
 
 export interface ScoringWeights {

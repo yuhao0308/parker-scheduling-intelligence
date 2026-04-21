@@ -56,6 +56,8 @@ class AssignedEmployeeOut(BaseModel):
     employee_id: str
     name: str
     license: str
+    entry_id: Optional[int] = None
+    confirmation_status: str = "UNSENT"
 
 
 class ShiftSlotOut(BaseModel):
@@ -157,6 +159,7 @@ class GenerateScheduleRequest(BaseModel):
     year: int
     month: int
     staff_count_override: Optional[int] = None
+    employee_pool: Optional[List[str]] = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -185,3 +188,50 @@ class ScheduleGenerationResult(BaseModel):
             }
         }
     )
+
+
+class RegenerateWeekRequest(BaseModel):
+    week_start: date
+    employee_pool: List[str]
+    preserve_responded: bool = True
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "week_start": "2026-04-20",
+                "employee_pool": ["RN001", "RN002", "CNA007"],
+                "preserve_responded": True,
+            }
+        }
+    )
+
+
+class RegenerateWeekResult(BaseModel):
+    week_start: date
+    entries_created: int
+    entries_preserved: int
+    warnings: List[str]
+    unfilled_slots: int
+
+
+class AutogenSubmitRequest(BaseModel):
+    week_start: date
+    employee_pool: List[str]
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "week_start": "2026-04-20",
+                "employee_pool": ["RN001", "CNA007"],
+            }
+        }
+    )
+
+
+class AutogenSubmitResult(BaseModel):
+    week_start: date
+    entries_generated: int
+    entries_preserved: int
+    notifications_sent: int
+    unfilled_slots: int
+    warnings: List[str]

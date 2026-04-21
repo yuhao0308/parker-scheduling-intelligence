@@ -16,10 +16,10 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
-from app.models.schedule import ScheduleEntry
+from app.models.schedule import ConfirmationStatus, ScheduleEntry
 from app.models.unit import Unit
 from app.schemas.common import LicenseType, ShiftLabel, UnitTypology, CERTIFIED_ROLES, LICENSED_ROLES
-from app.schemas.schedule import ScheduleGenerationResult
+from app.schemas.schedule import RegenerateWeekResult, ScheduleGenerationResult
 from app.services.filter import (
     CandidateRecord,
     ScheduleContext,
@@ -62,8 +62,13 @@ async def generate_monthly_schedule(
     db: AsyncSession,
     settings: Settings,
     staff_count_override: int | None = None,
+    employee_pool: list[str] | None = None,
 ) -> ScheduleGenerationResult:
-    """Generate a full month's schedule, writing ScheduleEntry rows."""
+    """Generate a full month's schedule, writing ScheduleEntry rows.
+
+    When ``employee_pool`` is provided, only those employees are eligible
+    for assignment. ``staff_count_override`` is ignored in that case
+    (pool is the source of truth)."""
 
     _, last_day = calendar.monthrange(year, month)
     first = date(year, month, 1)
@@ -91,8 +96,11 @@ async def generate_monthly_schedule(
     staff_list = await load_staff_pool(db)
     all_candidates = build_candidate_records(staff_list)
 
-    # Optional staff reduction for demo scenarios
-    if staff_count_override and staff_count_override < len(all_candidates):
+    if employee_pool:
+        pool_set = set(employee_pool)
+        all_candidates = [c for c in all_candidates if c.employee_id in pool_set]
+    elif staff_count_override and staff_count_override < len(all_candidates):
+        # Optional staff reduction for demo scenarios when no explicit pool.
         random.seed(42)  # deterministic for demo
         all_candidates = random.sample(all_candidates, staff_count_override)
 
@@ -196,6 +204,162 @@ async def generate_monthly_schedule(
         warnings=warnings[:50],  # cap for response size
         scenario=scenario,
         unfilled_slots=unfilled,
+    )
+
+
+async def regenerate_week_schedule(
+    week_start: date,
+    employee_pool: list[str],
+    db: AsyncSession,
+    settings: Settings,
+    preserve_responded: bool = True,
+) -> RegenerateWeekResult:
+    """Regenerate the 7-day window starting at ``week_start``.
+
+    Preserves any ``ScheduleEntry`` whose confirmation_status is ACCEPTED
+    (and, when ``preserve_responded`` is true, PENDING) — those nurses
+    already either said yes or are mid-ask. Drops UNSENT/DECLINED/REPLACED
+    rows and re-solves only the remaining gaps using the supplied pool.
+
+    The pool is an allowlist: no one outside ``employee_pool`` will be
+    assigned, even if they'd otherwise score well. ACCEPTED employees
+    stay on their frozen slot even if they're not in the new pool —
+    the scheduler can't silently delete a confirmed shift.
+    """
+    week_end = week_start + timedelta(days=6)
+
+    preserved_statuses = [ConfirmationStatus.ACCEPTED]
+    if preserve_responded:
+        preserved_statuses.append(ConfirmationStatus.PENDING)
+
+    # Load entries in the window, partition into preserved vs. removable.
+    existing_result = await db.execute(
+        select(ScheduleEntry).where(
+            ScheduleEntry.shift_date.between(week_start, week_end),
+        )
+    )
+    existing = list(existing_result.scalars().all())
+    preserved = [e for e in existing if e.confirmation_status in preserved_statuses]
+
+    # Delete everything else (UNSENT/DECLINED/REPLACED) to clear gaps.
+    removable_ids = [e.id for e in existing if e.confirmation_status not in preserved_statuses]
+    if removable_ids:
+        await db.execute(
+            delete(ScheduleEntry).where(ScheduleEntry.id.in_(removable_ids))
+        )
+
+    # Index preserved slots so we skip them in the solver.
+    frozen_slots: set[tuple[date, str, ShiftLabel]] = set()
+    for e in preserved:
+        label = e.shift_label if isinstance(e.shift_label, ShiftLabel) else ShiftLabel(e.shift_label.value)
+        frozen_slots.add((e.shift_date, e.unit_id, label))
+
+    # Pre-seed running state from preserved entries so hour budgets & rest
+    # windows account for already-accepted shifts.
+    weekly_hours: dict[tuple[str, int], float] = defaultdict(float)
+    daily_shifts: dict[tuple[str, date], list[tuple[date, ShiftLabel]]] = defaultdict(list)
+    for e in preserved:
+        label = e.shift_label if isinstance(e.shift_label, ShiftLabel) else ShiftLabel(e.shift_label.value)
+        wk = e.shift_date.isocalendar()[1]
+        weekly_hours[(e.employee_id, wk)] += SHIFT_DURATION_HOURS
+        daily_shifts[(e.employee_id, e.shift_date)].append((e.shift_date, label))
+
+    # Load units
+    units_result = await db.execute(select(Unit).where(Unit.is_active == True))
+    units = sorted(
+        units_result.scalars().all(),
+        key=lambda unit: (
+            0 if UnitTypology(unit.typology.value) == UnitTypology.SUBACUTE else 1,
+            unit.unit_id,
+        ),
+    )
+
+    # Build candidate pool from allowlist
+    staff_list = await load_staff_pool(db)
+    pool_set = set(employee_pool)
+    all_candidates = [c for c in build_candidate_records(staff_list) if c.employee_id in pool_set]
+
+    scoring_config = load_scoring_config(settings.scoring_weights_path)
+    base_hours_map = await load_hours_map(db)
+
+    entries_created = 0
+    warnings: list[str] = []
+
+    for day_offset in range(7):
+        current_date = week_start + timedelta(days=day_offset)
+        week_num = current_date.isocalendar()[1]
+
+        for unit in units:
+            unit_typology = UnitTypology(unit.typology.value)
+
+            for shift_label in SHIFT_ORDER:
+                if (current_date, unit.unit_id, shift_label) in frozen_slots:
+                    continue  # preserved by an accepted/pending nurse
+
+                if unit_typology == UnitTypology.SUBACUTE:
+                    bucket_order = ["licensed", "certified"]
+                else:
+                    bucket_order = ["certified", "licensed"]
+
+                assigned = None
+                for required_bucket in bucket_order:
+                    assigned = _assign_one(
+                        candidates=all_candidates,
+                        required_bucket=required_bucket,
+                        unit=unit,
+                        unit_typology=unit_typology,
+                        current_date=current_date,
+                        shift_label=shift_label,
+                        week_num=week_num,
+                        weekly_hours=weekly_hours,
+                        daily_shifts=daily_shifts,
+                        base_hours_map=base_hours_map,
+                        scoring_config=scoring_config,
+                        settings=settings,
+                        db=db,
+                    )
+                    if assigned:
+                        break
+
+                if assigned:
+                    emp_id = assigned.employee_id
+                    entry = ScheduleEntry(
+                        employee_id=emp_id,
+                        unit_id=unit.unit_id,
+                        shift_date=current_date,
+                        shift_label=shift_label,
+                        is_published=False,
+                        confirmation_status=ConfirmationStatus.UNSENT,
+                    )
+                    db.add(entry)
+                    entries_created += 1
+
+                    weekly_hours[(emp_id, week_num)] += SHIFT_DURATION_HOURS
+                    daily_shifts[(emp_id, current_date)].append(
+                        (current_date, shift_label)
+                    )
+                else:
+                    warnings.append(
+                        f"Unfilled: {unit.unit_id} {shift_label.value} {current_date}"
+                    )
+
+    await db.commit()
+
+    logger.info(
+        "week_regenerated",
+        week_start=week_start.isoformat(),
+        pool_size=len(pool_set),
+        entries_created=entries_created,
+        entries_preserved=len(preserved),
+        unfilled=len(warnings),
+    )
+
+    return RegenerateWeekResult(
+        week_start=week_start,
+        entries_created=entries_created,
+        entries_preserved=len(preserved),
+        warnings=warnings[:50],
+        unfilled_slots=len(warnings),
     )
 
 

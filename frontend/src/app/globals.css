@@ -128,3 +128,30 @@
     @apply font-sans;
   }
 }
+
+/* Print: show just the calendar full-width. Used by the Print button on /schedule. */
+@media print {
+  /* Hide global chrome */
+  header,
+  nav,
+  aside,
+  .no-print,
+  .operator-panel {
+    display: none !important;
+  }
+  /* Collapse the two-column split into one full-width calendar */
+  .schedule-grid {
+    display: block !important;
+  }
+  .schedule-calendar-card {
+    box-shadow: none !important;
+    border: none !important;
+  }
+  body {
+    background: white !important;
+  }
+  /* Avoid cutting off day cells across pages */
+  .schedule-calendar-card * {
+    page-break-inside: avoid;
+  }
+}

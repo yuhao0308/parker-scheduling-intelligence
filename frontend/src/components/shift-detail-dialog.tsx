@@ -22,9 +22,10 @@ interface ShiftDetailDialogProps {
 }
 
 const statusBadge: Record<string, { label: string; className: string }> = {
-  assigned: { label: "Assigned", className: "bg-emerald-100 text-emerald-800" },
-  unassigned: { label: "Unassigned", className: "bg-amber-100 text-amber-800" },
-  callout: { label: "Callout", className: "bg-red-100 text-red-800" },
+  fully_staffed: { label: "Fully Staffed", className: "bg-emerald-100 text-emerald-800" },
+  partially_staffed: { label: "Partially Staffed", className: "bg-amber-100 text-amber-800" },
+  unassigned: { label: "Unassigned", className: "bg-slate-100 text-slate-700" },
+  callout: { label: "Has Call-out", className: "bg-red-100 text-red-800" },
 };
 
 export function ShiftDetailDialog({
@@ -106,7 +107,7 @@ export function ShiftDetailDialog({
 
   if (!slot) return null;
 
-  const badge = statusBadge[slot.status] ?? statusBadge.assigned;
+  const badge = statusBadge[slot.status] ?? statusBadge.fully_staffed;
 
   return (
     <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -12,12 +12,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { MonthCalendar } from "@/components/month-calendar";
+import { MonthCalendar, type StatusFilter } from "@/components/month-calendar";
 import { ShiftDetailDialog } from "@/components/shift-detail-dialog";
 import { OperatorPanel } from "@/components/schedule/operator-panel";
 import { ReplacementDialog } from "@/components/schedule/replacement-dialog";
 import {
-  useCalloutsByMonth,
   useGenerateSchedule,
   useMonthlySchedule,
   useUnits,
@@ -32,7 +31,7 @@ import { useWorkHoursMonitor } from "@/providers/work-hours-provider";
 function defaultWeekStart(today = new Date()): string {
   const d = new Date(today);
   d.setHours(0, 0, 0, 0);
-  const dow = d.getDay(); // 0=Sun
+  const dow = d.getDay();
   const diffToMonday = (dow + 6) % 7;
   d.setDate(d.getDate() - diffToMonday);
   return d.toISOString().slice(0, 10);
@@ -61,24 +60,38 @@ export default function SchedulePage() {
     useState<ConfirmationEntry | null>(null);
   const [replacementData, setReplacementData] =
     useState<CalloutResponse | null>(null);
+  const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const { setScope } = useWorkHoursMonitor();
 
   const { data, isLoading } = useMonthlySchedule(year, month);
   const generateMutation = useGenerateSchedule();
   const { data: units } = useUnits();
-  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
-  const { data: calloutRollup = [] } = useCalloutsByMonth(monthStr);
 
-  const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
+  const today = useMemo(() => new Date(), []);
 
   function prevMonth() {
-    if (month === 1) { setMonth(12); setYear(year - 1); }
-    else { setMonth(month - 1); }
+    if (month === 1) {
+      setMonth(12);
+      setYear(year - 1);
+    } else {
+      setMonth(month - 1);
+    }
   }
 
   function nextMonth() {
-    if (month === 12) { setMonth(1); setYear(year + 1); }
-    else { setMonth(month + 1); }
+    if (month === 12) {
+      setMonth(1);
+      setYear(year + 1);
+    } else {
+      setMonth(month + 1);
+    }
+  }
+
+  function goToToday() {
+    const d = new Date();
+    setYear(d.getFullYear());
+    setMonth(d.getMonth() + 1);
   }
 
   function handleSlotClick(slot: ShiftSlot) {
@@ -103,45 +116,57 @@ export default function SchedulePage() {
     setScope({ year, month });
   }, [month, year, setScope]);
 
-  // Count statuses for summary
-  const statusCounts = { assigned: 0, unassigned: 0, callout: 0 };
-  if (data) {
-    for (const day of data.days) {
-      for (const slot of day.slots) {
-        statusCounts[slot.status]++;
-      }
-    }
-  }
-
   return (
     <div className="w-full space-y-4 schedule-page">
       {/* Header */}
-      <div className="flex items-center justify-between no-print">
-        <div className="flex items-center gap-3">
+      <div className="flex items-start justify-between gap-4 no-print">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-bold">Schedule</h1>
+          <p className="text-sm text-muted-foreground">
+            View and manage shifts with full AI assistance
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <select
+              className="text-sm border rounded-md px-2 py-1.5 bg-background"
+              value={selectedUnit ?? ""}
+              onChange={(e) => setSelectedUnit(e.target.value || null)}
+            >
+              <option value="">All Units</option>
+              {units?.map((u) => (
+                <option key={u.unit_id} value={u.unit_id}>
+                  {u.unit_id} — {u.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="text-sm border rounded-md px-2 py-1.5 bg-background"
+              value={statusFilter}
+              onChange={(e) =>
+                setStatusFilter(e.target.value as StatusFilter)
+              }
+            >
+              <option value="all">Show all</option>
+              <option value="fully_staffed">Fully Staffed</option>
+              <option value="partially_staffed">Partially Staffed</option>
+              <option value="callout">Has Call-out</option>
+              <option value="unassigned">Unassigned</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={goToToday}>
+            Today
+          </Button>
           <Button variant="outline" size="sm" onClick={prevMonth}>
             &larr;
           </Button>
-          <h2 className="text-2xl font-bold">
+          <span className="min-w-32 text-center text-lg font-semibold">
             {MONTH_NAMES[month - 1]} {year}
-          </h2>
+          </span>
           <Button variant="outline" size="sm" onClick={nextMonth}>
             &rarr;
           </Button>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Unit filter */}
-          <select
-            className="text-sm border rounded-md px-2 py-1.5 bg-background"
-            value={selectedUnit ?? ""}
-            onChange={(e) => setSelectedUnit(e.target.value || null)}
-          >
-            <option value="">All Units</option>
-            {units?.map((u) => (
-              <option key={u.unit_id} value={u.unit_id}>
-                {u.unit_id} — {u.name}
-              </option>
-            ))}
-          </select>
           <Button
             variant="outline"
             onClick={() => window.print()}
@@ -149,26 +174,9 @@ export default function SchedulePage() {
           >
             Print
           </Button>
-          <Button onClick={() => setGenerateOpen(true)}>
-            Generate Schedule
-          </Button>
+          <Button onClick={() => setGenerateOpen(true)}>Generate</Button>
         </div>
       </div>
-
-      {/* Status summary */}
-      {data && (
-        <div className="flex items-center gap-4 no-print">
-          <Badge className="bg-emerald-100 text-emerald-800" variant="secondary">
-            {statusCounts.assigned} Assigned
-          </Badge>
-          <Badge className="bg-amber-100 text-amber-800" variant="secondary">
-            {statusCounts.unassigned} Unassigned
-          </Badge>
-          <Badge className="bg-red-100 text-red-800" variant="secondary">
-            {statusCounts.callout} Callouts
-          </Badge>
-        </div>
-      )}
 
       {/* Generation result */}
       {generateMutation.isSuccess && generateMutation.data && (
@@ -215,13 +223,14 @@ export default function SchedulePage() {
       {/* Calendar + Operator side panel */}
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr] schedule-grid">
         <Card className="schedule-calendar-card">
-          <CardContent className="p-2">
+          <CardContent className="p-3">
             <MonthCalendar
               data={data}
               isLoading={isLoading}
               onSlotClick={handleSlotClick}
               selectedUnit={selectedUnit}
-              calloutsByDate={calloutRollup}
+              statusFilter={statusFilter}
+              today={today}
             />
           </CardContent>
         </Card>

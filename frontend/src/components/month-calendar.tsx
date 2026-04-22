@@ -2,75 +2,92 @@
 
 import { cn } from "@/lib/utils";
 import type {
-  CalloutDayCount,
-  ConfirmationStatus,
   MonthlySchedule,
+  ShiftLabel,
   ShiftSlot,
+  ShiftSlotStatus,
 } from "@/lib/types";
-import { StatusOrb } from "@/components/schedule/status-orb";
 
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
-const SHIFT_SHORT: Record<string, string> = {
-  DAY: "D",
-  EVENING: "E",
-  NIGHT: "N",
+const SHIFT_ORDER: Array<{ key: ShiftLabel; label: string }> = [
+  { key: "DAY", label: "Day" },
+  { key: "EVENING", label: "Evening" },
+  { key: "NIGHT", label: "Night" },
+];
+
+const PILL_CLASSES: Record<ShiftSlotStatus, string> = {
+  fully_staffed: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  partially_staffed: "bg-amber-100 text-amber-800 border-amber-300",
+  callout: "bg-red-100 text-red-800 border-red-300",
+  unassigned: "bg-slate-100 text-slate-600 border-slate-300",
 };
 
-const STATUS_CLASSES: Record<string, string> = {
-  assigned: "bg-emerald-100 border-emerald-400 text-emerald-800",
-  unassigned: "bg-amber-100 border-amber-300 text-amber-800",
-  callout: "bg-red-100 border-red-400 text-red-800 animate-pulse",
+const DOT_CLASSES: Record<ShiftSlotStatus, string> = {
+  fully_staffed: "bg-emerald-500",
+  partially_staffed: "bg-amber-400",
+  callout: "bg-red-500",
+  unassigned: "bg-slate-400",
 };
+
+const STATUS_LABEL: Record<ShiftSlotStatus, string> = {
+  fully_staffed: "Fully Staffed",
+  partially_staffed: "Partially Staffed",
+  callout: "Has Call-out",
+  unassigned: "Unassigned",
+};
+
+export type StatusFilter = "all" | ShiftSlotStatus;
 
 interface MonthCalendarProps {
   data: MonthlySchedule | undefined;
   isLoading: boolean;
   onSlotClick: (slot: ShiftSlot) => void;
   selectedUnit: string | null;
-  /** Optional per-day callout rollup (feeds the red day dot indicator). */
-  calloutsByDate?: CalloutDayCount[];
+  statusFilter: StatusFilter;
+  today: Date;
 }
 
-const STATUS_PRIORITY: Record<ConfirmationStatus, number> = {
-  DECLINED: 5,
-  PENDING: 4,
-  UNSENT: 3,
-  ACCEPTED: 2,
-  REPLACED: 1,
-};
-
-/** Pick the most actionable confirmation status among a slot's assignees. */
-function slotStatus(slot: ShiftSlot): ConfirmationStatus | null {
-  let best: ConfirmationStatus | null = null;
-  for (const e of slot.assigned_employees) {
-    const s = e.confirmation_status;
-    if (!s) continue;
-    if (!best || STATUS_PRIORITY[s] > STATUS_PRIORITY[best]) {
-      best = s;
-    }
-  }
-  return best;
+interface PillRow {
+  label: string;
+  shift: ShiftLabel;
+  assigned: number;
+  required: number;
+  status: ShiftSlotStatus;
+  slots: ShiftSlot[];
 }
 
-function getUnitShort(unitId: string): string {
-  return unitId.replace("U-", "");
+function aggregateDayStatus(
+  slots: ShiftSlot[],
+  selectedUnit: string | null,
+): PillRow[] {
+  return SHIFT_ORDER.map(({ key, label }) => {
+    const scoped = slots.filter(
+      (s) => s.shift_label === key && (!selectedUnit || s.unit_id === selectedUnit),
+    );
+    const assigned = scoped.reduce(
+      (n, s) => n + s.assigned_employees.length,
+      0,
+    );
+    const required = scoped.reduce((n, s) => n + s.required_count, 0);
+    const hasCallout = scoped.some((s) => s.unresolved_callout_count > 0);
+
+    let status: ShiftSlotStatus;
+    if (hasCallout) status = "callout";
+    else if (assigned === 0 && required > 0) status = "unassigned";
+    else if (required > 0 && assigned >= required) status = "fully_staffed";
+    else status = "partially_staffed";
+
+    return { label, shift: key, assigned, required, status, slots: scoped };
+  });
 }
 
-/** Group slots by unit, then aggregate shift statuses per unit for a day. */
-function summarizeDaySlots(slots: ShiftSlot[], unitFilter: string | null) {
-  const filtered = unitFilter
-    ? slots.filter((s) => s.unit_id === unitFilter)
-    : slots;
-
-  // Group by unit
-  const byUnit = new Map<string, ShiftSlot[]>();
-  for (const s of filtered) {
-    const existing = byUnit.get(s.unit_id) ?? [];
-    existing.push(s);
-    byUnit.set(s.unit_id, existing);
-  }
-  return byUnit;
+function isSameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
 export function MonthCalendar({
@@ -78,11 +95,9 @@ export function MonthCalendar({
   isLoading,
   onSlotClick,
   selectedUnit,
-  calloutsByDate,
+  statusFilter,
+  today,
 }: MonthCalendarProps) {
-  const calloutMap = new Map(
-    (calloutsByDate ?? []).map((c) => [c.date, c]),
-  );
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96 text-muted-foreground">
@@ -99,12 +114,10 @@ export function MonthCalendar({
     );
   }
 
-  // Figure out what day of week the 1st falls on
   const firstDate = new Date(data.days[0].date + "T00:00:00");
-  const startDow = firstDate.getDay(); // 0=Sun
+  const startDow = firstDate.getDay();
   const totalDays = data.days.length;
 
-  // Build rows of 7 cells
   const cells: (number | null)[] = [];
   for (let i = 0; i < startDow; i++) cells.push(null);
   for (let d = 0; d < totalDays; d++) cells.push(d);
@@ -112,12 +125,22 @@ export function MonthCalendar({
 
   return (
     <div className="w-full">
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-4 pb-3 text-xs">
+        {(Object.keys(STATUS_LABEL) as ShiftSlotStatus[]).map((s) => (
+          <div key={s} className="flex items-center gap-1.5">
+            <span className={cn("h-2.5 w-2.5 rounded-full", DOT_CLASSES[s])} />
+            <span className="text-muted-foreground">{STATUS_LABEL[s]}</span>
+          </div>
+        ))}
+      </div>
+
       {/* Header row */}
-      <div className="grid grid-cols-7 border-b">
+      <div className="grid grid-cols-7 border-b border-t">
         {WEEKDAYS.map((d) => (
           <div
             key={d}
-            className="text-center text-xs font-semibold text-muted-foreground py-2"
+            className="text-center text-[11px] font-semibold tracking-wider text-muted-foreground py-2"
           >
             {d}
           </div>
@@ -131,101 +154,68 @@ export function MonthCalendar({
             return (
               <div
                 key={`empty-${cellIdx}`}
-                className="min-h-28 border-r border-b bg-muted/20"
+                className="min-h-32 border-r border-b bg-muted/10"
               />
             );
           }
 
           const day = data.days[dayIdx];
-          const dayNum = new Date(day.date + "T00:00:00").getDate();
-          const byUnit = summarizeDaySlots(day.slots, selectedUnit);
-          const isWeekend = cellIdx % 7 === 0 || cellIdx % 7 === 6;
-          const callout = calloutMap.get(day.date);
-          const hasActiveCallout = (callout?.active ?? 0) > 0;
+          const cellDate = new Date(day.date + "T00:00:00");
+          const dayNum = cellDate.getDate();
+          const isToday = isSameDay(cellDate, today);
+          const rows = aggregateDayStatus(day.slots, selectedUnit);
 
           return (
             <div
               key={day.date}
-              className={cn(
-                "min-h-28 border-r border-b p-1 overflow-hidden",
-                isWeekend && "bg-muted/10"
-              )}
+              className="min-h-32 border-r border-b p-1.5 flex flex-col gap-1"
             >
-              <div className="flex items-center gap-1 mb-1">
-                <span className="text-xs font-medium text-muted-foreground">
-                  {dayNum}
+              <div className="flex items-center">
+                <span
+                  className={cn(
+                    "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs",
+                    isToday
+                      ? "bg-blue-600 text-white font-semibold"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {String(dayNum).padStart(2, "0")}
                 </span>
-                {hasActiveCallout && (
-                  <span
-                    aria-label={`${callout!.active} active callout${callout!.active === 1 ? "" : "s"}`}
-                    title={`${callout!.active} active / ${callout!.total} total`}
-                    className="h-1.5 w-1.5 rounded-full bg-red-500"
-                  />
-                )}
               </div>
-              <div className="space-y-0.5">
-                {Array.from(byUnit.entries())
-                  .slice(0, selectedUnit ? undefined : 4) // show max 4 units when not filtered
-                  .map(([unitId, unitSlots]) => (
-                    <div key={unitId} className="flex items-center gap-0.5">
-                      <span className="text-[10px] text-muted-foreground w-7 shrink-0 truncate">
-                        {getUnitShort(unitId)}
+
+              <div className="flex flex-col gap-1">
+                {rows.map((r) => {
+                  const faded =
+                    statusFilter !== "all" && statusFilter !== r.status;
+                  const disabled = r.slots.length === 0;
+                  return (
+                    <button
+                      key={r.shift}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => r.slots[0] && onSlotClick(r.slots[0])}
+                      className={cn(
+                        "w-full flex items-center justify-between",
+                        "rounded border px-1.5 py-0.5 text-[11px] font-medium",
+                        "transition-opacity",
+                        PILL_CLASSES[r.status],
+                        disabled && "opacity-0 pointer-events-none",
+                        !disabled && "hover:opacity-80 cursor-pointer",
+                        faded && !disabled && "opacity-25",
+                      )}
+                      title={`${r.label} — ${STATUS_LABEL[r.status]} (${r.assigned}/${r.required})`}
+                    >
+                      <span>{r.label}</span>
+                      <span className="tabular-nums">
+                        {r.assigned}/{r.required}
                       </span>
-                      {unitSlots.map((slot) => {
-                        const status = slotStatus(slot);
-                        return (
-                          <button
-                            key={`${slot.unit_id}-${slot.shift_label}`}
-                            onClick={() => onSlotClick(slot)}
-                            className={cn(
-                              "text-[9px] font-medium px-1 py-0.5 rounded border cursor-pointer transition-opacity hover:opacity-80 inline-flex items-center gap-0.5",
-                              STATUS_CLASSES[slot.status]
-                            )}
-                            title={`${slot.unit_name} ${slot.shift_label} — ${slot.status} (${slot.assigned_employees.length} staff)${status ? ` · ${status}` : ""}`}
-                          >
-                            {status && (
-                              <StatusOrb
-                                status={status}
-                                className="!h-1.5 !w-1.5"
-                              />
-                            )}
-                            <span>
-                              {SHIFT_SHORT[slot.shift_label] ??
-                                slot.shift_label[0]}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                {!selectedUnit && byUnit.size > 4 && (
-                  <div className="text-[9px] text-muted-foreground">
-                    +{byUnit.size - 4} more units
-                  </div>
-                )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           );
         })}
-      </div>
-
-      {/* Legend */}
-      <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-        <div className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-400" />
-          Assigned
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded bg-amber-100 border border-amber-300" />
-          Unassigned
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded bg-red-100 border border-red-400" />
-          Callout
-        </div>
-        <div className="text-[10px]">
-          D = Day, E = Evening, N = Night
-        </div>
       </div>
     </div>
   );

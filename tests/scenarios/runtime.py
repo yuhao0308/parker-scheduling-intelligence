@@ -313,15 +313,16 @@ def _evaluate_assertion(assertion: ScenarioAssertion, responses: dict[str, Any])
         passed = bool(slot) and bool(licenses) and licenses.issubset(allowed)
         detail = f"slot_found={bool(slot)}, assigned_licenses={sorted(licenses)}, allowed={sorted(allowed)}"
     elif kind == "subacute_slots_filled_before_lt":
+        _FILLED = {"fully_staffed", "partially_staffed"}
         subacute_filled = sum(
             1
             for slot in _monthly_slots(responses)
-            if slot.get("unit_id") == params["subacute_unit_id"] and slot.get("status") == "assigned"
+            if slot.get("unit_id") == params["subacute_unit_id"] and slot.get("status") in _FILLED
         )
         lt_filled = sum(
             1
             for slot in _monthly_slots(responses)
-            if slot.get("unit_id") == params["lt_unit_id"] and slot.get("status") == "assigned"
+            if slot.get("unit_id") == params["lt_unit_id"] and slot.get("status") in _FILLED
         )
         passed = subacute_filled >= lt_filled
         detail = f"subacute_assigned={subacute_filled}, lt_assigned={lt_filled}"

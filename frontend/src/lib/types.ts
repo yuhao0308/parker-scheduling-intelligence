@@ -122,15 +122,23 @@ export interface AssignedEmployee {
   confirmation_status?: ConfirmationStatus;
 }
 
+export type ShiftSlotStatus =
+  | "fully_staffed"
+  | "partially_staffed"
+  | "callout"
+  | "unassigned";
+
 export interface ShiftSlot {
   unit_id: string;
   unit_name: string;
   shift_date: string;
   shift_label: ShiftLabel;
-  status: "assigned" | "unassigned" | "callout";
+  status: ShiftSlotStatus;
   assigned_employees: AssignedEmployee[];
   callout_count: number;
   callout_employee_ids: string[];
+  required_count: number;
+  unresolved_callout_count: number;
 }
 
 export interface DaySchedule {

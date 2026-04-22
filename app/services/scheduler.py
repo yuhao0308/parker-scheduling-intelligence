@@ -16,6 +16,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.models.notification import SimulatedNotification
 from app.models.schedule import ConfirmationStatus, ScheduleEntry
 from app.models.unit import Unit
 from app.schemas.common import LicenseType, ShiftLabel, UnitTypology, CERTIFIED_ROLES, LICENSED_ROLES
@@ -75,7 +76,20 @@ async def generate_monthly_schedule(
     last = date(year, month, last_day)
 
     # Clear ALL existing entries for this month (both published and unpublished)
-    # so the scheduler can build from scratch without unique constraint violations
+    # so the scheduler can build from scratch without unique constraint violations.
+    # Clear dependent simulated_notification rows first to avoid FK violations.
+    entry_ids_result = await db.execute(
+        select(ScheduleEntry.id).where(
+            ScheduleEntry.shift_date.between(first, last),
+        )
+    )
+    entry_ids = list(entry_ids_result.scalars().all())
+    if entry_ids:
+        await db.execute(
+            delete(SimulatedNotification).where(
+                SimulatedNotification.schedule_entry_id.in_(entry_ids)
+            )
+        )
     await db.execute(
         delete(ScheduleEntry).where(
             ScheduleEntry.shift_date.between(first, last),
@@ -244,6 +258,13 @@ async def regenerate_week_schedule(
     # Delete everything else (UNSENT/DECLINED/REPLACED) to clear gaps.
     removable_ids = [e.id for e in existing if e.confirmation_status not in preserved_statuses]
     if removable_ids:
+        # Clear dependent notifications first — FK prevents deleting schedule
+        # entries that are still referenced by simulated_notification rows.
+        await db.execute(
+            delete(SimulatedNotification).where(
+                SimulatedNotification.schedule_entry_id.in_(removable_ids)
+            )
+        )
         await db.execute(
             delete(ScheduleEntry).where(ScheduleEntry.id.in_(removable_ids))
         )

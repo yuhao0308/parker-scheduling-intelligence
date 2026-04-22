@@ -12,6 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, settings
 from app.db.session import get_db
+from app.models.notification import (
+    NotificationKind,
+    NotificationStatus,
+    SimulatedNotification,
+)
 from app.models.schedule import Callout, ConfirmationStatus, ScheduleEntry
 from app.models.staff import StaffMaster
 from app.models.unit import Unit
@@ -35,6 +40,23 @@ from app.services.workload import build_work_hours_snapshot
 router = APIRouter(tags=["schedule"])
 
 SHIFT_LABELS = ["DAY", "EVENING", "NIGHT"]
+
+# Hardcoded minimum-required headcount per unit per shift for the POC.
+# Used to compute "assigned / required" ratios in the month calendar.
+# Keys must cover every active unit_id emitted by /schedule/monthly; missing
+# entries fall back to DEFAULT_REQUIRED.
+UNIT_SHIFT_REQUIRED: dict[str, dict[str, int]] = {
+    "U-SA1": {"DAY": 5, "EVENING": 5, "NIGHT": 4},
+    "U-SA2": {"DAY": 5, "EVENING": 5, "NIGHT": 4},
+    "U-SA3": {"DAY": 4, "EVENING": 4, "NIGHT": 3},
+    "U-SA4": {"DAY": 4, "EVENING": 4, "NIGHT": 3},
+    "U-LT1": {"DAY": 5, "EVENING": 5, "NIGHT": 4},
+    "U-LT2": {"DAY": 5, "EVENING": 5, "NIGHT": 4},
+    "U-LT3": {"DAY": 4, "EVENING": 4, "NIGHT": 3},
+    "U-LT4": {"DAY": 4, "EVENING": 4, "NIGHT": 3},
+    "U-LT5": {"DAY": 3, "EVENING": 3, "NIGHT": 2},
+}
+DEFAULT_REQUIRED = {"DAY": 4, "EVENING": 4, "NIGHT": 3}
 
 
 @router.get(
@@ -112,6 +134,28 @@ async def get_monthly_schedule(
         callout_map[key] += 1
         callout_emp_map[key].append(c.employee_id)
 
+    # Callouts with an ACCEPTED outreach attempt are resolved and should not
+    # paint the slot red in the calendar.
+    resolved_ids: set[int] = set()
+    if callouts:
+        resolved_q = (
+            select(SimulatedNotification.callout_id)
+            .where(
+                SimulatedNotification.callout_id.in_([c.id for c in callouts]),
+                SimulatedNotification.kind == NotificationKind.CALLOUT_OUTREACH,
+                SimulatedNotification.status == NotificationStatus.ACCEPTED,
+            )
+            .distinct()
+        )
+        resolved_ids = {row[0] for row in (await db.execute(resolved_q)).all()}
+
+    unresolved_map: dict[tuple[date, str, str], int] = defaultdict(int)
+    for c in callouts:
+        if c.id in resolved_ids:
+            continue
+        label = c.shift_label.value if hasattr(c.shift_label, "value") else c.shift_label
+        unresolved_map[(c.shift_date, c.unit_id, label)] += 1
+
     # Build response
     days = []
     for d in range(1, last_day + 1):
@@ -122,13 +166,20 @@ async def get_monthly_schedule(
                 key = (current, unit_id, label)
                 assigned = entry_map.get(key, [])
                 callout_count = callout_map.get(key, 0)
+                unresolved = unresolved_map.get(key, 0)
+                required_count = UNIT_SHIFT_REQUIRED.get(unit_id, DEFAULT_REQUIRED).get(
+                    label, 0
+                )
+                assigned_count = len(assigned)
 
-                if callout_count > 0:
+                if unresolved > 0:
                     status = "callout"
-                elif assigned:
-                    status = "assigned"
-                else:
+                elif assigned_count == 0:
                     status = "unassigned"
+                elif required_count > 0 and assigned_count >= required_count:
+                    status = "fully_staffed"
+                else:
+                    status = "partially_staffed"
 
                 slots.append(
                     ShiftSlotOut(
@@ -140,6 +191,8 @@ async def get_monthly_schedule(
                         assigned_employees=assigned,
                         callout_count=callout_count,
                         callout_employee_ids=callout_emp_map.get(key, []),
+                        required_count=required_count,
+                        unresolved_callout_count=unresolved,
                     )
                 )
         days.append(DayScheduleOut(date=current.isoformat(), slots=slots))

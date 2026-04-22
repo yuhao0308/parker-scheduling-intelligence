@@ -65,10 +65,13 @@ class ShiftSlotOut(BaseModel):
     unit_name: str
     shift_date: str
     shift_label: str
-    status: str  # "assigned" | "unassigned" | "callout"
+    # "fully_staffed" | "partially_staffed" | "callout" | "unassigned"
+    status: str
     assigned_employees: List[AssignedEmployeeOut]
     callout_count: int
     callout_employee_ids: List[str] = []
+    required_count: int = 0
+    unresolved_callout_count: int = 0
 
 
 class DayScheduleOut(BaseModel):
@@ -95,7 +98,7 @@ class MonthlyScheduleOut(BaseModel):
                                 "unit_name": "Subacute Unit 1",
                                 "shift_date": "2026-04-01",
                                 "shift_label": "DAY",
-                                "status": "assigned",
+                                "status": "fully_staffed",
                                 "assigned_employees": [
                                     {
                                         "employee_id": "RN200",

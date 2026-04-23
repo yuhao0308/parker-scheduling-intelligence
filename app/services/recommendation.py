@@ -15,7 +15,9 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import Settings
 from app.exceptions import NoCandidatesError, UnitNotFoundError
@@ -23,7 +25,7 @@ from app.models.hours import HoursLedger
 from app.models.recommendation import RecommendationLog
 from app.models.staff import StaffMaster
 from app.models.unit import Unit
-from app.schemas.callout import CalloutRequest, CalloutResponse
+from app.schemas.callout import CalledOutEmployee, CalloutRequest, CalloutResponse
 from app.schemas.candidate import FilterStats, ScoreBreakdown, ScoredCandidate
 from app.schemas.common import EmploymentClass, LicenseType, ShiftLabel, UnitTypology
 from app.services.filter import (
@@ -78,7 +80,10 @@ async def generate_recommendations(
         raise UnitNotFoundError(callout.unit_id)
 
     target_typology = UnitTypology(unit.typology.value)
-    required_license = await _infer_required_license(callout.callout_employee_id, db)
+    called_out_employee = await _load_called_out_employee(
+        callout.callout_employee_id, db
+    )
+    required_license = called_out_employee.license
 
     # 2. Load scoring config
     scoring_config = load_scoring_config(settings.scoring_weights_path)
@@ -310,6 +315,7 @@ async def generate_recommendations(
         unit_name=unit.name,
         shift_date=callout.shift_date,
         shift_label=callout.shift_label,
+        called_out_employee=called_out_employee,
         candidates=response_candidates,
         filter_stats=filter_stats,
         generated_at=datetime.now(timezone.utc),
@@ -319,17 +325,43 @@ async def generate_recommendations(
 # --- Helper functions ---
 
 
-async def _infer_required_license(
+async def _load_called_out_employee(
     callout_employee_id: str, db: AsyncSession
-) -> LicenseType:
-    """Infer the required license from the calling-out employee's license.
+) -> CalledOutEmployee:
+    """Load profile details for the employee who called out.
 
-    The replacement needs to be in the same license bucket (licensed or certified).
+    The `license` field also drives filter eligibility — replacements must be
+    in the same license bucket (licensed or certified).
     """
-    staff = await db.get(StaffMaster, callout_employee_id)
-    if staff:
-        return LicenseType(staff.license.value)
-    return LicenseType.CNA
+    result = await db.execute(
+        select(StaffMaster)
+        .where(StaffMaster.employee_id == callout_employee_id)
+        .options(selectinload(StaffMaster.ops))
+    )
+    staff = result.scalar_one_or_none()
+    if staff is None:
+        return CalledOutEmployee(
+            employee_id=callout_employee_id,
+            name=callout_employee_id,
+            license=LicenseType.CNA,
+            employment_class=EmploymentClass.PER_DIEM,
+        )
+
+    home_unit_id = staff.ops.home_unit_id if staff.ops else None
+    home_unit_name: str | None = None
+    if home_unit_id:
+        unit = await db.get(Unit, home_unit_id)
+        home_unit_name = unit.name if unit else None
+
+    return CalledOutEmployee(
+        employee_id=staff.employee_id,
+        name=staff.name,
+        license=LicenseType(staff.license.value),
+        employment_class=EmploymentClass(staff.employment_class.value),
+        home_unit_id=home_unit_id,
+        home_unit_name=home_unit_name,
+        hire_date=staff.ops.hire_date if staff.ops else None,
+    )
 
 
 

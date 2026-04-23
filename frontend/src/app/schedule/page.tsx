@@ -46,7 +46,7 @@ const SCENARIOS = [
 export default function SchedulePage() {
   const [year, setYear] = useState(2026);
   const [month, setMonth] = useState(4);
-  const [activeSlot, setActiveSlot] = useState<ShiftSlot | null>(null);
+  const [activeSlots, setActiveSlots] = useState<ShiftSlot[]>([]);
   const [detailOpen, setDetailOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [scenarioIdx, setScenarioIdx] = useState(0);
@@ -85,8 +85,8 @@ export default function SchedulePage() {
     setMonth(d.getMonth() + 1);
   }
 
-  function handleSlotClick(slot: ShiftSlot) {
-    setActiveSlot(slot);
+  function handleSlotClick(slots: ShiftSlot[]) {
+    setActiveSlots(slots);
     setDetailOpen(true);
   }
 
@@ -139,7 +139,6 @@ export default function SchedulePage() {
               <option value="all">Show all</option>
               <option value="fully_staffed">Fully Staffed</option>
               <option value="partially_staffed">Partially Staffed</option>
-              <option value="callout">Has Call-out</option>
               <option value="unassigned">Unassigned</option>
             </select>
           </div>
@@ -238,7 +237,7 @@ export default function SchedulePage() {
 
       {/* Shift detail dialog */}
       <ShiftDetailDialog
-        slot={activeSlot}
+        slots={activeSlots}
         open={detailOpen}
         onOpenChange={setDetailOpen}
       />

@@ -13,23 +13,22 @@ import { Button } from "@/components/ui/button";
 import { CandidateList } from "./candidate-list";
 import { OverrideDialog } from "./override-dialog";
 import { useSubmitCallout, useSubmitOverride } from "@/lib/queries";
-import type { CalloutResponse, ShiftSlot, ScoredCandidate } from "@/lib/types";
+import type { CalloutResponse, ShiftSlot, ScoredCandidate, ShiftSlotStatus } from "@/lib/types";
 
 interface ShiftDetailDialogProps {
-  slot: ShiftSlot | null;
+  slots: ShiftSlot[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const statusBadge: Record<string, { label: string; className: string }> = {
+const statusBadge: Record<ShiftSlotStatus, { label: string; className: string }> = {
   fully_staffed: { label: "Fully Staffed", className: "bg-emerald-100 text-emerald-800" },
   partially_staffed: { label: "Partially Staffed", className: "bg-amber-100 text-amber-800" },
   unassigned: { label: "Unassigned", className: "bg-slate-100 text-slate-700" },
-  callout: { label: "Has Call-out", className: "bg-red-100 text-red-800" },
 };
 
 export function ShiftDetailDialog({
-  slot,
+  slots,
   open,
   onOpenChange,
 }: ShiftDetailDialogProps) {
@@ -53,6 +52,7 @@ export function ShiftDetailDialog({
   }
 
   function handleGetRecommendations() {
+    const slot = slots[0];
     if (!slot) return;
     // Use callout employee if available, otherwise first assigned employee
     const calloutEmployeeId =
@@ -105,34 +105,72 @@ export function ShiftDetailDialog({
     );
   }
 
-  if (!slot) return null;
+  if (slots.length === 0) return null;
 
-  const badge = statusBadge[slot.status] ?? statusBadge.fully_staffed;
+  const first = slots[0];
+  const isMulti = slots.length > 1;
+  const assignedAcrossUnits = slots.flatMap((s) =>
+    s.assigned_employees.map((e) => ({
+      ...e,
+      unit_id: s.unit_id,
+      unit_name: s.unit_name,
+    })),
+  );
+  const totalRequired = slots.reduce((n, s) => n + s.required_count, 0);
+  const totalConfirmed = assignedAcrossUnits.filter(
+    (e) => e.confirmation_status === "ACCEPTED",
+  ).length;
+  const aggregatedStatus: ShiftSlotStatus = isMulti
+    ? assignedAcrossUnits.length === 0 && totalRequired > 0
+      ? "unassigned"
+      : totalRequired > 0 && totalConfirmed >= totalRequired
+        ? "fully_staffed"
+        : "partially_staffed"
+    : first.status;
+
+  const badge = statusBadge[aggregatedStatus] ?? statusBadge.fully_staffed;
+  const title = isMulti
+    ? `All Units — ${first.shift_label} Shift`
+    : `${first.unit_name} — ${first.shift_label} Shift`;
 
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-6xl w-[95vw] max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {slot.unit_name} — {slot.shift_label} Shift
-            </DialogTitle>
+            <DialogTitle>{title}</DialogTitle>
             <DialogDescription>
-              {slot.shift_date} &middot;{" "}
+              {first.shift_date} &middot;{" "}
               <Badge className={badge.className} variant="secondary">
                 {badge.label}
               </Badge>
+              {isMulti && (
+                <span className="ml-2 text-muted-foreground">
+                  {totalConfirmed}/{totalRequired} confirmed across{" "}
+                  {slots.length} units
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
           {/* Assigned employees */}
-          {slot.assigned_employees.length > 0 && (
+          {assignedAcrossUnits.length > 0 && (
             <div className="space-y-1">
-              <div className="text-sm font-medium">Currently Assigned</div>
+              <div className="text-sm font-medium">
+                Currently Assigned ({assignedAcrossUnits.length})
+              </div>
               <div className="flex flex-wrap gap-2">
-                {slot.assigned_employees.map((e) => (
-                  <Badge key={e.employee_id} variant="outline">
+                {assignedAcrossUnits.map((e) => (
+                  <Badge
+                    key={`${e.unit_id}-${e.employee_id}`}
+                    variant="outline"
+                  >
                     {e.name} ({e.license})
+                    {isMulti && (
+                      <span className="ml-1 text-muted-foreground">
+                        · {e.unit_id}
+                      </span>
+                    )}
                   </Badge>
                 ))}
               </div>
@@ -162,7 +200,7 @@ export function ShiftDetailDialog({
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3 py-4">
-              {(slot.status === "callout" || slot.status === "unassigned") && (
+              {!isMulti && first.status === "unassigned" && (
                 <Button
                   onClick={handleGetRecommendations}
                   disabled={calloutMutation.isPending}
@@ -171,6 +209,12 @@ export function ShiftDetailDialog({
                     ? "Finding replacements..."
                     : "Get Replacement Recommendations"}
                 </Button>
+              )}
+              {isMulti && (
+                <p className="text-xs text-muted-foreground">
+                  Filter to a single unit to file a callout or request
+                  replacements.
+                </p>
               )}
               {calloutMutation.isError && (
                 <p className="text-sm text-destructive">

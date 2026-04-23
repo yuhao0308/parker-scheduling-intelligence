@@ -48,6 +48,16 @@ export interface CalloutRequest {
   shift_label: ShiftLabel;
 }
 
+export interface CalledOutEmployee {
+  employee_id: string;
+  name: string;
+  license: LicenseType;
+  employment_class: EmploymentClass;
+  home_unit_id: string | null;
+  home_unit_name: string | null;
+  hire_date: string | null;
+}
+
 export interface CalloutResponse {
   callout_id: number;
   recommendation_log_id: number;
@@ -55,6 +65,7 @@ export interface CalloutResponse {
   unit_name: string;
   shift_date: string;
   shift_label: ShiftLabel;
+  called_out_employee: CalledOutEmployee;
   candidates: ScoredCandidate[];
   filter_stats: FilterStats;
   generated_at: string;
@@ -91,7 +102,10 @@ export interface StaffOut {
 export interface RecentCallout {
   callout_id: number;
   employee_id: string;
+  employee_name: string | null;
+  employee_license: LicenseType | null;
   unit_id: string;
+  unit_name: string | null;
   shift_date: string;
   shift_label: string;
   reason: string | null;
@@ -101,6 +115,8 @@ export interface RecentCallout {
   filter_stats: FilterStats | null;
   override_id: number | null;
   selected_employee_id: string | null;
+  selected_employee_name: string | null;
+  selected_employee_license: LicenseType | null;
   selected_rank: number | null;
   override_reason: string | null;
 }
@@ -125,7 +141,6 @@ export interface AssignedEmployee {
 export type ShiftSlotStatus =
   | "fully_staffed"
   | "partially_staffed"
-  | "callout"
   | "unassigned";
 
 export interface ShiftSlot {

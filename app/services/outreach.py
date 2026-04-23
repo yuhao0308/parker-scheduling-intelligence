@@ -112,17 +112,34 @@ async def respond_to_outreach(
     callout = await db.get(Callout, callout_id)
     rec = await db.get(RecommendationLog, notification.recommendation_log_id) if notification.recommendation_log_id else None
 
+    # Outreach-accept is the employee's explicit "yes" reply to the urgent
+    # SMS — no separate confirmation round is needed. Store the new entry as
+    # ACCEPTED so it counts toward confirmed coverage in the calendar.
     new_entry = ScheduleEntry(
         employee_id=notification.employee_id,
         unit_id=callout.unit_id,
         shift_date=callout.shift_date,
         shift_label=callout.shift_label,
         is_published=True,
-        confirmation_status=ConfirmationStatus.PENDING,
+        confirmation_status=ConfirmationStatus.ACCEPTED,
         confirmation_sent_at=now,
+        confirmation_responded_at=now,
     )
     db.add(new_entry)
     await db.flush()
+
+    # Mark the caller's original entry REPLACED so it drops off the shift roster.
+    original_q = select(ScheduleEntry).where(
+        ScheduleEntry.employee_id == callout.employee_id,
+        ScheduleEntry.unit_id == callout.unit_id,
+        ScheduleEntry.shift_date == callout.shift_date,
+        ScheduleEntry.shift_label == callout.shift_label,
+        ScheduleEntry.confirmation_status != ConfirmationStatus.REPLACED,
+    )
+    original_entry = (await db.execute(original_q)).scalar_one_or_none()
+    if original_entry is not None:
+        original_entry.confirmation_status = ConfirmationStatus.REPLACED
+        original_entry.replaced_by_entry_id = new_entry.id
 
     if rec:
         db.add(

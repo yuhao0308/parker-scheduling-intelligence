@@ -161,9 +161,7 @@ async def get_monthly_schedule(
                     1 for a in assigned if a.confirmation_status == "ACCEPTED"
                 )
 
-                if unresolved > 0:
-                    status = "callout"
-                elif len(assigned) == 0:
+                if len(assigned) == 0:
                     status = "unassigned"
                 elif required_count > 0 and confirmed_count >= required_count:
                     status = "fully_staffed"

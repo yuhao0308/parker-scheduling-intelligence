@@ -19,21 +19,18 @@ const SHIFT_ORDER: Array<{ key: ShiftLabel; label: string }> = [
 const PILL_CLASSES: Record<ShiftSlotStatus, string> = {
   fully_staffed: "bg-emerald-100 text-emerald-800 border-emerald-300",
   partially_staffed: "bg-amber-100 text-amber-800 border-amber-300",
-  callout: "bg-red-100 text-red-800 border-red-300",
   unassigned: "bg-slate-100 text-slate-600 border-slate-300",
 };
 
 const DOT_CLASSES: Record<ShiftSlotStatus, string> = {
   fully_staffed: "bg-emerald-500",
   partially_staffed: "bg-amber-400",
-  callout: "bg-red-500",
   unassigned: "bg-slate-400",
 };
 
 const STATUS_LABEL: Record<ShiftSlotStatus, string> = {
   fully_staffed: "Fully Staffed",
   partially_staffed: "Partially Staffed",
-  callout: "Has Call-out",
   unassigned: "Unassigned",
 };
 
@@ -42,7 +39,7 @@ export type StatusFilter = "all" | ShiftSlotStatus;
 interface MonthCalendarProps {
   data: MonthlySchedule | undefined;
   isLoading: boolean;
-  onSlotClick: (slot: ShiftSlot) => void;
+  onSlotClick: (slots: ShiftSlot[]) => void;
   selectedUnit: string | null;
   statusFilter: StatusFilter;
   today: Date;
@@ -76,11 +73,9 @@ function aggregateDayStatus(
       0,
     );
     const required = scoped.reduce((n, s) => n + s.required_count, 0);
-    const hasCallout = scoped.some((s) => s.unresolved_callout_count > 0);
 
     let status: ShiftSlotStatus;
-    if (hasCallout) status = "callout";
-    else if (assigned === 0 && required > 0) status = "unassigned";
+    if (assigned === 0 && required > 0) status = "unassigned";
     else if (required > 0 && assigned >= required) status = "fully_staffed";
     else status = "partially_staffed";
 
@@ -199,7 +194,7 @@ export function MonthCalendar({
                       key={r.shift}
                       type="button"
                       disabled={disabled}
-                      onClick={() => r.slots[0] && onSlotClick(r.slots[0])}
+                      onClick={() => r.slots.length > 0 && onSlotClick(r.slots)}
                       className={cn(
                         "w-full flex items-center justify-between",
                         "rounded border px-1.5 py-0.5 text-[11px] font-medium",

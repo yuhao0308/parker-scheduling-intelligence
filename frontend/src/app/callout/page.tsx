@@ -15,14 +15,92 @@ import {
   CheckCircle2,
   Plus,
   User,
+  UserX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
+  CalledOutEmployee,
   CalloutRequest,
   CalloutResponse,
   ScoredCandidate,
   ShiftLabel,
 } from "@/lib/types";
+
+const licenseBadgeClass: Record<string, string> = {
+  RN: "bg-blue-100 text-blue-800 border-blue-200",
+  LPN: "bg-green-100 text-green-800 border-green-200",
+  CNA: "bg-amber-100 text-amber-800 border-amber-200",
+  PCT: "bg-purple-100 text-purple-800 border-purple-200",
+};
+
+function tenureLabel(hireDate: string | null): string | null {
+  if (!hireDate) return null;
+  const hire = new Date(hireDate);
+  if (Number.isNaN(hire.getTime())) return null;
+  const years = (Date.now() - hire.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  if (years >= 1) return `${years.toFixed(1)} yr tenure`;
+  const months = Math.max(0, Math.round(years * 12));
+  return `${months} mo tenure`;
+}
+
+function CalledOutEmployeeCard({
+  employee,
+}: {
+  employee: CalledOutEmployee | null | undefined;
+}) {
+  if (!employee) return null;
+  const tenure = tenureLabel(employee.hire_date);
+  return (
+    <div className="rounded-xl border border-rose-200 bg-rose-50/50 shadow-sm">
+      <div className="flex items-start gap-3 px-5 py-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700">
+          <UserX className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-700">
+              Called Out — Finding a Match For
+            </p>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span className="text-base font-semibold">{employee.name}</span>
+            <Badge
+              variant="secondary"
+              className={cn(
+                "border text-[11px] px-1.5 py-0",
+                licenseBadgeClass[employee.license] ?? "",
+              )}
+            >
+              {employee.license}
+            </Badge>
+            <Badge
+              variant="secondary"
+              className="border text-[11px] px-1.5 py-0 bg-muted text-muted-foreground"
+            >
+              {employee.employment_class.replace(/_/g, " ")}
+            </Badge>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+            <span>
+              Home unit:{" "}
+              <span className="font-medium text-foreground">
+                {employee.home_unit_name ?? employee.home_unit_id ?? "—"}
+              </span>
+            </span>
+            {tenure && (
+              <>
+                <span>·</span>
+                <span>{tenure}</span>
+              </>
+            )}
+            <span>·</span>
+            <span className="font-mono text-[10px]">{employee.employee_id}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const VALID_SHIFTS: readonly ShiftLabel[] = ["DAY", "EVENING", "NIGHT"];
 
@@ -165,6 +243,8 @@ function ResultsView({
           New Call-Out
         </Button>
       </div>
+
+      <CalledOutEmployeeCard employee={result.called_out_employee} />
 
       <FilterStatsBadge stats={result.filter_stats} />
 

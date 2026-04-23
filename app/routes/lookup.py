@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.deps import DbSession
 from app.models.recommendation import OverrideLog, RecommendationLog
@@ -36,7 +37,10 @@ class StaffOut(BaseModel):
 class RecentCalloutOut(BaseModel):
     callout_id: int
     employee_id: str
+    employee_name: Optional[str] = None
+    employee_license: Optional[str] = None
     unit_id: str
+    unit_name: Optional[str] = None
     shift_date: str
     shift_label: str
     reason: Optional[str] = None
@@ -46,6 +50,8 @@ class RecentCalloutOut(BaseModel):
     filter_stats: Optional[dict] = None
     override_id: Optional[int] = None
     selected_employee_id: Optional[str] = None
+    selected_employee_name: Optional[str] = None
+    selected_employee_license: Optional[str] = None
     selected_rank: Optional[int] = None
     override_reason: Optional[str] = None
 
@@ -108,10 +114,26 @@ async def list_recent_callouts(
     db: Annotated[AsyncSession, DbSession],
     limit: int = Query(default=20, le=100),
 ):
+    CallerStaff = aliased(StaffMaster)
+    ReplacementStaff = aliased(StaffMaster)
+
     result = await db.execute(
-        select(Callout, RecommendationLog, OverrideLog)
+        select(
+            Callout,
+            RecommendationLog,
+            OverrideLog,
+            CallerStaff,
+            ReplacementStaff,
+            Unit,
+        )
         .outerjoin(RecommendationLog, Callout.id == RecommendationLog.callout_id)
         .outerjoin(OverrideLog, RecommendationLog.id == OverrideLog.recommendation_log_id)
+        .outerjoin(CallerStaff, Callout.employee_id == CallerStaff.employee_id)
+        .outerjoin(
+            ReplacementStaff,
+            OverrideLog.selected_employee_id == ReplacementStaff.employee_id,
+        )
+        .outerjoin(Unit, Callout.unit_id == Unit.unit_id)
         .order_by(Callout.reported_at.desc())
         .limit(limit)
     )
@@ -120,7 +142,10 @@ async def list_recent_callouts(
         RecentCalloutOut(
             callout_id=c.id,
             employee_id=c.employee_id,
+            employee_name=caller.name if caller else None,
+            employee_license=caller.license.value if caller else None,
             unit_id=c.unit_id,
+            unit_name=unit.name if unit else None,
             shift_date=c.shift_date.isoformat(),
             shift_label=c.shift_label.value,
             reason=c.reason,
@@ -130,8 +155,10 @@ async def list_recent_callouts(
             filter_stats=rec.filter_stats if rec else None,
             override_id=ovr.id if ovr else None,
             selected_employee_id=ovr.selected_employee_id if ovr else None,
+            selected_employee_name=replacement.name if replacement else None,
+            selected_employee_license=replacement.license.value if replacement else None,
             selected_rank=ovr.selected_rank if ovr else None,
             override_reason=ovr.override_reason if ovr else None,
         )
-        for c, rec, ovr in rows
+        for c, rec, ovr, caller, replacement, unit in rows
     ]

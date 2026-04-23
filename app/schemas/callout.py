@@ -7,7 +7,7 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
 
 from app.schemas.candidate import FilterStats, ScoredCandidate
-from app.schemas.common import ShiftLabel
+from app.schemas.common import EmploymentClass, LicenseType, ShiftLabel
 
 
 class HITLFeedbackTag(str, enum.Enum):
@@ -42,6 +42,20 @@ class CalloutRequest(BaseModel):
     )
 
 
+class CalledOutEmployee(BaseModel):
+    """Profile snapshot of the employee who called out — shown on the
+    recommendation page so coordinators can compare against replacements.
+    """
+
+    employee_id: str
+    name: str
+    license: LicenseType
+    employment_class: EmploymentClass
+    home_unit_id: Optional[str] = None
+    home_unit_name: Optional[str] = None
+    hire_date: Optional[date] = None
+
+
 class CalloutResponse(BaseModel):
     callout_id: int
     recommendation_log_id: int
@@ -49,6 +63,7 @@ class CalloutResponse(BaseModel):
     unit_name: str
     shift_date: date
     shift_label: ShiftLabel
+    called_out_employee: CalledOutEmployee
     candidates: List[ScoredCandidate]
     filter_stats: FilterStats
     generated_at: datetime
@@ -62,6 +77,15 @@ class CalloutResponse(BaseModel):
                 "unit_name": "Subacute Unit 1",
                 "shift_date": "2026-04-14",
                 "shift_label": "DAY",
+                "called_out_employee": {
+                    "employee_id": "CNA100",
+                    "name": "Daniel Griffin",
+                    "license": "CNA",
+                    "employment_class": "FT",
+                    "home_unit_id": "U-SA1",
+                    "home_unit_name": "Subacute Unit 1",
+                    "hire_date": "2022-08-15",
+                },
                 "candidates": [
                     {
                         "rank": 1,

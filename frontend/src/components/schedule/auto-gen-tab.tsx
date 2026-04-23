@@ -1,22 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ShiftRow } from "@/components/schedule/shift-row";
 import { StatusOrb } from "@/components/schedule/status-orb";
-import { useCountdown } from "@/components/schedule/use-countdown";
+import { cn } from "@/lib/utils";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Search,
+  Send,
+  Sparkles,
+  X,
+  XCircle,
+} from "lucide-react";
 import {
   useAllActiveStaff,
   useAutogenSubmit,
+  useCommitDecisions,
   useConfirmations,
   useDemoConfig,
+  useMonthlySchedule,
   useRemoveEntry,
-  useRespondConfirmation,
+  useUnits,
 } from "@/lib/queries";
 import type {
-  CalloutResponse,
+  AutogenSubmitResult,
   ConfirmationEntry,
   ConfirmationStatus,
   StaffOut,
@@ -25,10 +36,6 @@ import type {
 interface AutoGenTabProps {
   weekStart: string;
   onWeekStartChange: (value: string) => void;
-  onDeclineReplacement: (
-    entry: ConfirmationEntry,
-    replacement: CalloutResponse,
-  ) => void;
 }
 
 // Priority order when an employee has multiple entries this week — whichever
@@ -41,36 +48,49 @@ const STATUS_PRIORITY: Record<ConfirmationStatus, number> = {
   REPLACED: 1,
 };
 
-/**
- * Auto-Gen tab: pool picker + submit + inline reply console.
- *
- * The supervisor mockup asks for a single pane that:
- *   1. lists every active employee with a checkbox (pool membership)
- *   2. shows a colored orb per employee reflecting weekly confirmation state
- *   3. offers a Submit button that generates + sends confirmations atomically
- *   4. lets the scheduler simulate Accept/Decline/Timeout inline
- *   5. for DECLINED rows, exposes a one-click "Remove from pool" (absorbs
- *      the entry into REPLACED with no replacement, freeing the slot for a
- *      future re-submit with a different pool).
- */
+interface EmployeeMembership {
+  status: ConfirmationStatus;
+  entries: ConfirmationEntry[];
+  pendingEntries: ConfirmationEntry[];
+  oldestPending: ConfirmationEntry | null;
+}
+
+type RowError = { message: string; retry: () => void };
+
 export function AutoGenTab({
   weekStart,
   onWeekStartChange,
-  onDeclineReplacement,
 }: AutoGenTabProps) {
   const { data: staff = [] } = useAllActiveStaff();
+  const { data: units = [] } = useUnits();
   const { data: confirmations } = useConfirmations(weekStart);
   const { data: demoConfig } = useDemoConfig();
+  const weekStartDate = useMemo(
+    () => new Date(`${weekStart}T00:00:00`),
+    [weekStart],
+  );
+  const { data: monthlyForDemand } = useMonthlySchedule(
+    weekStartDate.getFullYear(),
+    weekStartDate.getMonth() + 1,
+  );
 
   const autogenMutation = useAutogenSubmit();
-  const respondMutation = useRespondConfirmation(weekStart);
+  const commitMutation = useCommitDecisions(weekStart);
   const removeMutation = useRemoveEntry(weekStart);
 
-  // Track if scheduler has manually touched the pool; until then derive it
-  // from whoever's already on the week (so returning to the tab mid-flow
-  // shows the right checkboxes without a sync effect).
+  // Pool: supervisor's checkbox selection. Until they touch it, derive from
+  // whoever already has a non-REPLACED entry this week.
   const [manualPool, setManualPool] = useState<Set<string> | null>(null);
-  const [timedOut, setTimedOut] = useState<Set<number>>(new Set());
+  const [rowErrors, setRowErrors] = useState<Map<string, RowError>>(new Map());
+  const [searchQuery, setSearchQuery] = useState("");
+  const inFlightEntries = useRef<Set<number>>(new Set());
+
+  // Per-entry scheduler intent. true = keep this assignment, false = reopen it
+  // back into the pool. Default true on first sight.
+  const [intents, setIntents] = useState<Map<number, boolean>>(new Map());
+  const seenIntentIdsRef = useRef<Set<number>>(new Set());
+  const [isCommitting, setIsCommitting] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
 
   const derivedPool = useMemo(() => {
     if (manualPool) return manualPool;
@@ -85,21 +105,23 @@ export function AutoGenTab({
     setManualPool((prev) => updater(prev ?? derivedPool));
   };
 
-  // Map employee_id → {status, entry} for this week.
+  // Map employee_id → membership snapshot for this week.
   const byEmployee = useMemo(() => {
-    const m = new Map<
-      string,
-      { status: ConfirmationStatus; entries: ConfirmationEntry[] }
-    >();
+    const m = new Map<string, EmployeeMembership>();
     for (const e of confirmations?.entries ?? []) {
       const existing = m.get(e.employee_id);
       if (!existing) {
         m.set(e.employee_id, {
           status: e.confirmation_status,
           entries: [e],
+          pendingEntries:
+            e.confirmation_status === "PENDING" ? [e] : [],
+          oldestPending: null,
         });
       } else {
         existing.entries.push(e);
+        if (e.confirmation_status === "PENDING")
+          existing.pendingEntries.push(e);
         if (
           STATUS_PRIORITY[e.confirmation_status] >
           STATUS_PRIORITY[existing.status]
@@ -108,8 +130,49 @@ export function AutoGenTab({
         }
       }
     }
+    for (const membership of m.values()) {
+      membership.pendingEntries.sort((a, b) => {
+        const ta = a.confirmation_sent_at
+          ? Date.parse(a.confirmation_sent_at)
+          : Number.MAX_SAFE_INTEGER;
+        const tb = b.confirmation_sent_at
+          ? Date.parse(b.confirmation_sent_at)
+          : Number.MAX_SAFE_INTEGER;
+        return ta - tb;
+      });
+      membership.oldestPending = membership.pendingEntries[0] ?? null;
+    }
     return m;
   }, [confirmations]);
+
+  // Seed intents: every newly-appearing PENDING entry starts as "Keep"
+  // (checked). Once the scheduler toggles it, we preserve their choice.
+  useEffect(() => {
+    if (!confirmations) return;
+    const currentPendingIds = new Set<number>();
+    let changed = false;
+    const next = new Map(intents);
+    for (const e of confirmations.entries) {
+      if (e.confirmation_status === "PENDING") {
+        currentPendingIds.add(e.entry_id);
+        if (!seenIntentIdsRef.current.has(e.entry_id)) {
+          seenIntentIdsRef.current.add(e.entry_id);
+          next.set(e.entry_id, true);
+          changed = true;
+        }
+      }
+    }
+    for (const id of next.keys()) {
+      if (!currentPendingIds.has(id)) {
+        next.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) setIntents(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [confirmations]);
+
+  const confirmationLabel = demoConfig?.confirmation_timeout_label ?? "2 hours";
 
   function toggle(employeeId: string) {
     setPool((prev) => {
@@ -128,34 +191,96 @@ export function AutoGenTab({
     });
   }
 
-  function handleRespond(
-    entry: ConfirmationEntry,
-    response: "ACCEPTED" | "DECLINED" | "TIMEOUT",
-  ) {
-    respondMutation.mutate(
-      { entryId: entry.entry_id, req: { response } },
-      {
-        onSuccess: (result) => {
-          if (result.replacement) {
-            onDeclineReplacement(entry, result.replacement);
-          }
-        },
-      },
-    );
+  function setIntent(entryId: number, keep: boolean) {
+    setIntents((prev) => {
+      const next = new Map(prev);
+      next.set(entryId, keep);
+      return next;
+    });
   }
 
-  function handleRemoveFromPool(employeeId: string, entries: ConfirmationEntry[]) {
-    // Remove every DECLINED/PENDING/UNSENT entry for this employee this week.
-    // ACCEPTED rows are left alone (locked shifts).
+  async function handleCommit() {
+    if (!confirmations) return;
+    const pending = confirmations.entries.filter(
+      (e) => e.confirmation_status === "PENDING",
+    );
+    if (pending.length === 0) return;
+
+    setIsCommitting(true);
+    setCommitError(null);
+
+    try {
+      const result = await commitMutation.mutateAsync({
+        week_start: weekStart,
+        employee_pool: Array.from(pool),
+        decisions: pending.map((entry) => ({
+          entry_id: entry.entry_id,
+          keep: intents.get(entry.entry_id) !== false,
+        })),
+      });
+
+      if (result.declined_employee_ids.length > 0) {
+        const reducedPool = new Set(pool);
+        for (const id of result.declined_employee_ids) reducedPool.delete(id);
+        setManualPool(reducedPool);
+      }
+
+      if (result.skipped_count > 0) {
+        setCommitError(
+          `${result.skipped_count} shifts changed before commit and were skipped. Refresh and review again if needed.`,
+        );
+      }
+    } catch (error) {
+      setCommitError(
+        (error as Error)?.message ?? "Commit failed. Please retry.",
+      );
+    } finally {
+      setIsCommitting(false);
+    }
+  }
+
+  function clearRowError(employeeId: string) {
+    setRowErrors((prev) => {
+      if (!prev.has(employeeId)) return prev;
+      const next = new Map(prev);
+      next.delete(employeeId);
+      return next;
+    });
+  }
+
+  function setRowError(employeeId: string, error: RowError) {
+    setRowErrors((prev) => {
+      const next = new Map(prev);
+      next.set(employeeId, error);
+      return next;
+    });
+  }
+
+  function handleRemoveFromPool(
+    employeeId: string,
+    entries: ConfirmationEntry[],
+  ) {
     const targets = entries.filter(
       (e) =>
         e.confirmation_status === "DECLINED" ||
         e.confirmation_status === "PENDING" ||
         e.confirmation_status === "UNSENT",
     );
-    if (targets.length === 0) return;
+    clearRowError(employeeId);
     for (const e of targets) {
-      removeMutation.mutate(e.entry_id);
+      if (inFlightEntries.current.has(e.entry_id)) continue;
+      inFlightEntries.current.add(e.entry_id);
+      removeMutation.mutate(e.entry_id, {
+        onError: (err) => {
+          setRowError(employeeId, {
+            message: (err as Error)?.message ?? "Failed to remove.",
+            retry: () => handleRemoveFromPool(employeeId, entries),
+          });
+        },
+        onSettled: () => {
+          inFlightEntries.current.delete(e.entry_id);
+        },
+      });
     }
     setPool((prev) => {
       const next = new Set(prev);
@@ -165,18 +290,71 @@ export function AutoGenTab({
   }
 
   const summary = confirmations?.summary;
-  const hasPending = (summary?.pending ?? 0) > 0;
-  const submitDisabled =
-    autogenMutation.isPending || pool.size === 0 || hasPending;
+  const submitDisabled = autogenMutation.isPending || pool.size === 0;
+  const pendingCount = summary?.pending ?? 0;
+  const acceptedCount = summary?.accepted ?? 0;
+  const commitDisabled =
+    isCommitting ||
+    pendingCount === 0 ||
+    commitMutation.isPending ||
+    autogenMutation.isPending;
+  const mutating =
+    commitMutation.isPending || removeMutation.isPending || isCommitting;
 
-  const confirmationLabel = demoConfig?.confirmation_timeout_label ?? "2 hours";
-  const confirmationSeconds = demoConfig?.confirmation_timeout_seconds ?? 15;
+  const unitCount = units.length;
+  const { peopleSlots } = useMemo(() => {
+    if (!monthlyForDemand) {
+      const shifts = unitCount * 7 * 3;
+      return { peopleSlots: shifts * 2, shiftsPerWeek: shifts };
+    }
+    const startMs = weekStartDate.getTime();
+    const endMs = startMs + 7 * 24 * 60 * 60 * 1000;
+    let required = 0;
+    let shifts = 0;
+    for (const day of monthlyForDemand.days) {
+      const ms = Date.parse(`${day.date}T00:00:00`);
+      if (ms < startMs || ms >= endMs) continue;
+      for (const slot of day.slots) {
+        required += slot.required_count;
+        if (slot.required_count > 0) shifts += 1;
+      }
+    }
+    return { peopleSlots: required, shiftsPerWeek: shifts };
+  }, [monthlyForDemand, weekStartDate, unitCount]);
+
+  // Intent preview — count how many checked vs. unchecked will be committed.
+  const intentPreview = useMemo(() => {
+    let keep = 0;
+    let remove = 0;
+    for (const e of confirmations?.entries ?? []) {
+      if (e.confirmation_status !== "PENDING") continue;
+      if (intents.get(e.entry_id) === false) remove += 1;
+      else keep += 1;
+    }
+    return { keep, remove };
+  }, [confirmations, intents]);
+
+  const totalAssigned = acceptedCount + pendingCount;
+  const fillPercent =
+    peopleSlots > 0
+      ? Math.min(100, Math.round((acceptedCount / peopleSlots) * 100))
+      : 0;
+  const hasPool = staff.length > 0;
+
+  const trimmedQuery = searchQuery.trim().toLowerCase();
+  const visibleStaff = useMemo(() => {
+    if (!trimmedQuery) return staff;
+    return staff.filter((s) => s.name.toLowerCase().includes(trimmedQuery));
+  }, [staff, trimmedQuery]);
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* Week picker */}
       <div className="flex items-center justify-between gap-2">
-        <Label htmlFor="autogen-week-start" className="text-xs text-muted-foreground">
+        <Label
+          htmlFor="autogen-week-start"
+          className="text-xs text-muted-foreground"
+        >
           Week of
         </Label>
         <Input
@@ -188,30 +366,131 @@ export function AutoGenTab({
         />
       </div>
 
-      {/* Summary badges */}
-      {summary && (
-        <div className="flex gap-1.5 flex-wrap text-[11px]">
-          <Badge className="bg-amber-100 text-amber-800">
-            {summary.pending} pending
-          </Badge>
-          <Badge className="bg-emerald-100 text-emerald-800">
-            {summary.accepted} accepted
-          </Badge>
-          <Badge className="bg-red-100 text-red-800">
-            {summary.declined} declined
-          </Badge>
-          <Badge className="bg-slate-100 text-slate-600">
-            {summary.replaced} replaced
-          </Badge>
+      {/* Stat tile grid — progress at a glance */}
+      <StatGrid
+        poolSize={pool.size}
+        staffTotal={staff.length}
+        fillPercent={fillPercent}
+        assigned={acceptedCount}
+        demand={peopleSlots}
+        pending={pendingCount}
+        confirmed={acceptedCount}
+      />
+
+      {/* Review banner — only when there are pending decisions */}
+      {pendingCount > 0 && (
+        <ReviewBanner
+          pendingCount={pendingCount}
+          keepCount={intentPreview.keep}
+          removeCount={intentPreview.remove}
+          onFinalize={handleCommit}
+          disabled={commitDisabled}
+          isCommitting={isCommitting}
+          error={commitError}
+        />
+      )}
+
+      {/* Unfilled warning — only after a submit that couldn't fill everything */}
+      {autogenMutation.isSuccess &&
+        autogenMutation.data &&
+        autogenMutation.data.unfilled_slots > 0 && (
+          <UnfilledCallout
+            count={autogenMutation.data.unfilled_slots}
+            warnings={autogenMutation.data.warnings}
+          />
+        )}
+
+      {/* Send success toast (auto-fades concept — just a subtle confirmation) */}
+      {autogenMutation.isSuccess &&
+        autogenMutation.data &&
+        autogenMutation.data.unfilled_slots === 0 &&
+        autogenMutation.data.entries_generated > 0 && (
+          <div
+            className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-800"
+            role="status"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              <strong>{autogenMutation.data.entries_generated}</strong> shift
+              {autogenMutation.data.entries_generated === 1 ? "" : "s"} assigned ·{" "}
+              <strong>{autogenMutation.data.notifications_sent}</strong> invite
+              {autogenMutation.data.notifications_sent === 1 ? "" : "s"} sent ·
+              replies due within {confirmationLabel}
+            </span>
+          </div>
+        )}
+
+      {/* Pool toolbar */}
+      {hasPool && (
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-xs">
+              <span className="font-semibold">Staff pool</span>
+              <span className="ml-1.5 text-muted-foreground">
+                · {pool.size} of {staff.length}
+                {trimmedQuery && (
+                  <span className="ml-1">
+                    · {visibleStaff.length} shown
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() =>
+                  setManualPool(new Set(staff.map((s) => s.employee_id)))
+                }
+                disabled={pool.size === staff.length}
+                className="rounded-md border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualPool(new Set())}
+                disabled={pool.size === 0}
+                className="rounded-md border px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              role="searchbox"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name"
+              aria-label="Search staff by name"
+              className="h-8 pl-8 pr-8 text-xs [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {/* Scrollable pool list */}
-      <div className="max-h-[55vh] overflow-y-auto border rounded-md divide-y">
+      <div className="max-h-[55vh] overflow-y-auto rounded-lg border bg-card divide-y">
         {staff.length === 0 ? (
           <div className="p-4 text-xs text-muted-foreground">Loading staff…</div>
+        ) : visibleStaff.length === 0 ? (
+          <div className="p-4 text-xs text-muted-foreground">
+            No staff match &ldquo;{searchQuery}&rdquo;.
+          </div>
         ) : (
-          staff.map((s) => {
+          visibleStaff.map((s) => {
             const membership = byEmployee.get(s.employee_id);
             const status: ConfirmationStatus | null = membership?.status ?? null;
             const checked = pool.has(s.employee_id);
@@ -222,92 +501,332 @@ export function AutoGenTab({
                 checked={checked}
                 status={status}
                 entries={membership?.entries ?? []}
+                pendingCount={membership?.pendingEntries.length ?? 0}
+                acceptedCount={
+                  membership?.entries.filter(
+                    (e) => e.confirmation_status === "ACCEPTED",
+                  ).length ?? 0
+                }
+                declinedCount={
+                  membership?.entries.filter(
+                    (e) => e.confirmation_status === "DECLINED",
+                  ).length ?? 0
+                }
+                confirmationLabel={confirmationLabel}
+                intents={intents}
+                onIntentChange={setIntent}
                 onToggle={() => toggle(s.employee_id)}
-                onRespond={handleRespond}
                 onRemoveFromPool={() =>
                   handleRemoveFromPool(
                     s.employee_id,
                     membership?.entries ?? [],
                   )
                 }
-                confirmationLabel={confirmationLabel}
-                confirmationSeconds={confirmationSeconds}
-                timedOut={timedOut}
-                markTimedOut={(id) =>
-                  setTimedOut((set) => new Set(set).add(id))
-                }
-                mutating={
-                  respondMutation.isPending || removeMutation.isPending
-                }
+                error={rowErrors.get(s.employee_id) ?? null}
+                mutating={mutating}
               />
             );
           })
         )}
       </div>
 
-      {/* Submit */}
-      <div className="flex items-center justify-between gap-2 border-t pt-3">
-        <div className="text-xs text-muted-foreground">
-          {pool.size} employee{pool.size === 1 ? "" : "s"} in pool
-          {hasPending && (
-            <span className="ml-1 text-amber-700">
-              · {summary?.pending} pending reply
-              {summary?.pending === 1 ? "" : "s"}
+      {/* Footer — Send invites CTA */}
+      <div className="flex items-center justify-between gap-3 pt-1">
+        <div className="text-[11px] text-muted-foreground leading-tight">
+          {pendingCount > 0 ? (
+            <span className="text-amber-700">
+              {pendingCount} pending{" "}
+              {pendingCount === 1 ? "reply" : "replies"} won&apos;t be re-sent
             </span>
+          ) : pool.size === 0 ? (
+            "Add staff to pool to enable sending"
+          ) : (
+            "Sends invites to newly added pool members"
           )}
         </div>
         <Button
           size="sm"
           onClick={handleSubmit}
           disabled={submitDisabled}
+          className="gap-1.5 h-8"
+          aria-label="Send invites to newly added pool members"
         >
-          {autogenMutation.isPending ? "Submitting…" : "Submit"}
+          <Sparkles className="h-3.5 w-3.5" />
+          {autogenMutation.isPending ? "Generating…" : "Generate & invite"}
         </Button>
       </div>
 
-      {autogenMutation.isSuccess && autogenMutation.data && (
-        <div className="text-xs text-muted-foreground">
-          {autogenMutation.data.entries_generated} new shift
-          {autogenMutation.data.entries_generated === 1 ? "" : "s"} ·{" "}
-          {autogenMutation.data.notifications_sent} confirmation
-          {autogenMutation.data.notifications_sent === 1 ? "" : "s"} sent ·
-          auto-accepts in {confirmationLabel}
-        </div>
-      )}
-
       {autogenMutation.isError && (
-        <div className="text-xs text-destructive">
-          {(autogenMutation.error as Error)?.message ?? "Submit failed."}
-        </div>
-      )}
-
-      {respondMutation.isError && (
-        <div className="text-xs text-destructive">
-          {(respondMutation.error as Error)?.message ?? "Response failed."}
+        <div
+          className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          role="alert"
+        >
+          <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            {(autogenMutation.error as Error)?.message ?? "Send failed."}
+          </span>
         </div>
       )}
     </div>
   );
 }
 
-// --- Row --------------------------------------------------------------
+/* ── Stat grid ───────────────────────────────────────────────────────── */
+
+interface StatGridProps {
+  poolSize: number;
+  staffTotal: number;
+  fillPercent: number;
+  assigned: number;
+  demand: number;
+  pending: number;
+  confirmed: number;
+}
+
+function StatGrid({
+  poolSize,
+  staffTotal,
+  fillPercent,
+  assigned,
+  demand,
+  pending,
+  confirmed,
+}: StatGridProps) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {/* Filled — hero tile with progress bar */}
+      <div className="col-span-2 rounded-lg border bg-card px-4 py-3">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Week progress
+          </span>
+          <span className="text-[11px] text-muted-foreground tabular-nums">
+            {assigned} / {demand} shifts
+          </span>
+        </div>
+        <div className="mt-1 flex items-baseline gap-1.5">
+          <span className="text-2xl font-bold tabular-nums tracking-tight">
+            {fillPercent}%
+          </span>
+          <span className="text-xs text-muted-foreground">filled</span>
+        </div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn(
+              "h-full rounded-full transition-all",
+              fillPercent >= 100
+                ? "bg-emerald-500"
+                : fillPercent >= 80
+                  ? "bg-sky-500"
+                  : "bg-amber-500",
+            )}
+            style={{ width: `${Math.max(fillPercent, 2)}%` }}
+          />
+        </div>
+      </div>
+
+      <StatTile label="Pool" value={poolSize} sublabel={`of ${staffTotal}`} />
+      <StatTile
+        label="Pending"
+        value={pending}
+        sublabel={pending === 0 ? "—" : "awaiting reply"}
+        tone={pending > 0 ? "amber" : undefined}
+      />
+      <StatTile
+        label="Confirmed"
+        value={confirmed}
+        sublabel="shifts"
+        tone={confirmed > 0 ? "emerald" : undefined}
+      />
+      <StatTile
+        label="Demand"
+        value={demand}
+        sublabel="people-slots"
+      />
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  sublabel,
+  tone,
+}: {
+  label: string;
+  value: number;
+  sublabel?: string;
+  tone?: "amber" | "emerald" | "red";
+}) {
+  const toneClass =
+    tone === "amber"
+      ? "text-amber-700"
+      : tone === "emerald"
+        ? "text-emerald-700"
+        : tone === "red"
+          ? "text-red-700"
+          : "";
+  return (
+    <div className="rounded-lg border bg-card px-3 py-2.5">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+      <div className={cn("text-xl font-bold tabular-nums leading-tight mt-0.5", toneClass)}>
+        {value}
+      </div>
+      {sublabel && (
+        <div className="text-[10px] text-muted-foreground leading-tight">
+          {sublabel}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Review banner ───────────────────────────────────────────────────── */
+
+interface ReviewBannerProps {
+  pendingCount: number;
+  keepCount: number;
+  removeCount: number;
+  onFinalize: () => void;
+  disabled: boolean;
+  isCommitting: boolean;
+  error: string | null;
+}
+
+function ReviewBanner({
+  pendingCount,
+  keepCount,
+  removeCount,
+  onFinalize,
+  disabled,
+  isCommitting,
+  error,
+}: ReviewBannerProps) {
+  return (
+    <div className="rounded-lg border border-sky-300 bg-sky-50/80 p-3 space-y-2.5">
+      <div className="flex items-start gap-2.5">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-sky-200/70 mt-0.5">
+          <span className="text-[11px] font-bold text-sky-900 tabular-nums">
+            {pendingCount}
+          </span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-sky-900">
+            {pendingCount === 1 ? "Invite" : "Invites"} ready to review
+          </div>
+          <p className="text-[11px] text-sky-900/70 leading-snug">
+            Keep confirmed replies. Reopen declines to put the shift back into
+            the pool.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 pl-8">
+        <div className="flex items-center gap-3 text-xs text-sky-900/90 tabular-nums">
+          <span className="inline-flex items-center gap-1">
+            <CheckCircle2 className="h-3 w-3" />
+            <strong>{keepCount}</strong> keep
+          </span>
+          <span className="text-sky-900/40">·</span>
+          <span className="inline-flex items-center gap-1">
+            <XCircle className="h-3 w-3" />
+            <strong>{removeCount}</strong> reopen
+          </span>
+        </div>
+        <Button
+          size="sm"
+          onClick={onFinalize}
+          disabled={disabled}
+          className="h-7 px-3 text-xs gap-1"
+          aria-label={`Commit ${pendingCount} decisions`}
+        >
+          {isCommitting ? "Committing…" : `Finalize ${pendingCount}`}
+        </Button>
+      </div>
+
+      {error && (
+        <div
+          className="rounded border border-destructive/30 bg-white px-2 py-1.5 text-[11px] text-destructive ml-8"
+          role="alert"
+        >
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Unfilled callout ────────────────────────────────────────────────── */
+
+interface UnfilledCalloutProps {
+  count: number;
+  warnings: string[];
+}
+
+function UnfilledCallout({ count, warnings }: UnfilledCalloutProps) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50/80 p-3 space-y-2">
+      <div className="flex items-start gap-2.5">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700 mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-amber-900">
+            {count} slot{count === 1 ? "" : "s"} couldn&apos;t be filled
+          </div>
+          <p className="text-[11px] text-amber-900/70 leading-snug">
+            Add more people to the pool or broaden license coverage, then
+            generate again.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-[11px] text-amber-900/80 underline hover:text-amber-900 shrink-0"
+        >
+          {open ? "Hide" : "Details"}
+        </button>
+      </div>
+      {open && warnings.length > 0 && (
+        <ul className="mt-1 pl-6 list-disc space-y-0.5 text-[11px] text-amber-900/80 max-h-32 overflow-y-auto">
+          {warnings.map((w, i) => (
+            <li key={i} className="tabular-nums">
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ── Row (unchanged logic) ───────────────────────────────────────────── */
 
 interface StaffRowProps {
   staff: StaffOut;
   checked: boolean;
   status: ConfirmationStatus | null;
   entries: ConfirmationEntry[];
-  onToggle: () => void;
-  onRespond: (
-    entry: ConfirmationEntry,
-    response: "ACCEPTED" | "DECLINED" | "TIMEOUT",
-  ) => void;
-  onRemoveFromPool: () => void;
+  pendingCount: number;
+  acceptedCount: number;
+  declinedCount: number;
   confirmationLabel: string;
-  confirmationSeconds: number;
-  timedOut: Set<number>;
-  markTimedOut: (entryId: number) => void;
+  intents: Map<number, boolean>;
+  onIntentChange: (entryId: number, keep: boolean) => void;
+  onToggle: () => void;
+  onRemoveFromPool: () => void;
+  error: RowError | null;
   mutating: boolean;
+}
+
+function sortEntries(entries: ConfirmationEntry[]): ConfirmationEntry[] {
+  const shiftRank: Record<string, number> = { DAY: 0, EVENING: 1, NIGHT: 2 };
+  return entries.slice().sort((a, b) => {
+    if (a.shift_date !== b.shift_date)
+      return a.shift_date.localeCompare(b.shift_date);
+    return (shiftRank[a.shift_label] ?? 9) - (shiftRank[b.shift_label] ?? 9);
+  });
 }
 
 function StaffRow({
@@ -315,98 +834,140 @@ function StaffRow({
   checked,
   status,
   entries,
-  onToggle,
-  onRespond,
-  onRemoveFromPool,
+  pendingCount,
+  acceptedCount,
+  declinedCount,
   confirmationLabel,
-  confirmationSeconds,
-  timedOut,
-  markTimedOut,
+  intents,
+  onIntentChange,
+  onToggle,
+  onRemoveFromPool,
+  error,
   mutating,
 }: StaffRowProps) {
-  const pendingEntry = entries.find(
-    (e) =>
-      e.confirmation_status === "PENDING" && !timedOut.has(e.entry_id),
-  );
   const isDeclined = status === "DECLINED";
+  const uncheckedWithPending = !checked && pendingCount > 0;
+  const hasEntries = entries.length > 0;
 
-  const remaining = useCountdown(
-    confirmationSeconds,
-    !!pendingEntry,
-    () => {
-      if (pendingEntry) {
-        markTimedOut(pendingEntry.entry_id);
-        onRespond(pendingEntry, "TIMEOUT");
-      }
-    },
-  );
+  const sortedEntries = hasEntries ? sortEntries(entries) : [];
+
+  const summaryBits: string[] = [];
+  if (acceptedCount > 0) summaryBits.push(`${acceptedCount} accepted`);
+  if (pendingCount > 0) summaryBits.push(`${pendingCount} pending`);
+  if (declinedCount > 0) summaryBits.push(`${declinedCount} declined`);
+  const statusSummary = summaryBits.join(" · ");
+
+  const shouldAutoExpand = pendingCount > 0;
 
   return (
-    <div className="px-3 py-2 text-sm flex items-center gap-2">
-      <input
-        type="checkbox"
-        className="h-4 w-4 shrink-0"
-        checked={checked}
-        onChange={onToggle}
-        aria-label={`Include ${staff.name} in pool`}
-      />
-      <StatusOrb status={status} />
-      <div className="min-w-0 flex-1">
-        <div className="font-medium truncate">
-          {staff.name}{" "}
-          <span className="text-xs text-muted-foreground font-normal">
-            ({staff.license})
-          </span>
-        </div>
-        <div className="text-[11px] text-muted-foreground truncate">
-          {staff.home_unit_id ?? "—"}
-          {entries.length > 0 && (
-            <span className="ml-1">
-              · {entries.length} shift{entries.length === 1 ? "" : "s"} this
-              week
-            </span>
+    <div className="px-3 py-2 text-sm">
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          className="h-4 w-4 shrink-0 mt-1 accent-primary"
+          checked={checked}
+          onChange={onToggle}
+          aria-label={`Include ${staff.name} in pool`}
+        />
+        <details className="min-w-0 flex-1 group" open={shouldAutoExpand}>
+          <summary className="flex items-start gap-2 cursor-pointer list-none outline-none focus-visible:underline">
+            <div className="mt-1 shrink-0">
+              <StatusOrb status={status} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-medium truncate">
+                {staff.name}{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  ({staff.license})
+                </span>
+              </div>
+              <div className="text-[11px] text-muted-foreground truncate">
+                {staff.home_unit_id ?? "—"}
+                {hasEntries && (
+                  <span className="ml-1">
+                    · {entries.length} shift
+                    {entries.length === 1 ? "" : "s"}
+                  </span>
+                )}
+                {statusSummary && (
+                  <span className="ml-1">· {statusSummary}</span>
+                )}
+              </div>
+              {uncheckedWithPending && (
+                <div
+                  className="text-[11px] text-amber-700 mt-0.5"
+                  role="note"
+                >
+                  Removed from pool — {pendingCount} pending invite
+                  {pendingCount === 1 ? "" : "s"} still open. Use &ldquo;Remove
+                  from pool&rdquo; to cancel them.
+                </div>
+              )}
+              {error && (
+                <div
+                  className="text-[11px] text-destructive mt-0.5 flex items-center gap-2"
+                  role="alert"
+                >
+                  <span>{error.message}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      error.retry();
+                    }}
+                    className="underline hover:no-underline"
+                    aria-label={`Retry last action for ${staff.name}`}
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </div>
+            {hasEntries && (
+              <span
+                aria-hidden
+                className="shrink-0 text-[10px] text-muted-foreground transition-transform group-open:rotate-90"
+                title="Show per-shift detail"
+              >
+                ▸
+              </span>
+            )}
+          </summary>
+          {hasEntries && (
+            <div className="mt-1 space-y-0.5">
+              {sortedEntries.map((entry) => (
+                <ShiftRow
+                  key={entry.entry_id}
+                  entry={entry}
+                  employeeName={staff.name}
+                  confirmationLabel={confirmationLabel}
+                  intent={intents.get(entry.entry_id) !== false}
+                  onIntentChange={(next) =>
+                    onIntentChange(entry.entry_id, next)
+                  }
+                  disabled={mutating}
+                />
+              ))}
+            </div>
           )}
-        </div>
-      </div>
+        </details>
 
-      {pendingEntry ? (
-        <div className="flex items-center gap-1 shrink-0">
-          <span
-            className="text-[10px] text-muted-foreground tabular-nums"
-            title={`Auto-accepts in ${confirmationLabel} (demo: ${remaining}s)`}
-          >
-            {remaining}s
-          </span>
+        {isDeclined && (
           <Button
             size="sm"
             variant="outline"
-            className="h-6 px-1.5 text-[11px]"
-            onClick={() => onRespond(pendingEntry, "ACCEPTED")}
+            className="h-6 px-1.5 text-[11px] text-red-700 border-red-200 hover:bg-red-50 shrink-0"
+            onClick={onRemoveFromPool}
             disabled={mutating}
+            aria-label={`Remove ${staff.name} from pool`}
           >
-            Accept
+            Remove from pool
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-6 px-1.5 text-[11px] text-red-700 border-red-200 hover:bg-red-50"
-            onClick={() => onRespond(pendingEntry, "DECLINED")}
-            disabled={mutating}
-          >
-            Decline
-          </Button>
-        </div>
-      ) : isDeclined ? (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-6 px-1.5 text-[11px] text-red-700 border-red-200 hover:bg-red-50 shrink-0"
-          onClick={onRemoveFromPool}
-          disabled={mutating}
-        >
-          Remove from pool
-        </Button>
-      ) : null}
+        )}
+      </div>
     </div>
   );
 }
+
+// Unused but kept as part of the public-ish API surface of this module.
+export type { AutogenSubmitResult };

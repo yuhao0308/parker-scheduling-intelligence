@@ -1,16 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
-
-import {
-  Table,
-  TableBody,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
 import { CandidateRow } from "./candidate-row";
+import { Input } from "@/components/ui/input";
 import { tierCandidates } from "@/lib/tiering";
 import type { ScoredCandidate } from "@/lib/types";
 
@@ -20,37 +13,22 @@ interface CandidateListProps {
   disabled: boolean;
 }
 
-function CandidateTableHeader() {
-  return (
-    <TableHeader>
-      <TableRow>
-        <TableHead className="w-16">Rank</TableHead>
-        <TableHead>Name</TableHead>
-        <TableHead>License</TableHead>
-        <TableHead>Type</TableHead>
-        <TableHead>Home Unit</TableHead>
-        <TableHead>Score</TableHead>
-        <TableHead>Breakdown</TableHead>
-        <TableHead className="w-32">Action</TableHead>
-      </TableRow>
-    </TableHeader>
-  );
-}
-
-interface CollapsibleSectionProps {
+function CollapsibleSection({
+  title,
+  count,
+  children,
+}: {
   title: string;
   count: number;
   children: React.ReactNode;
-}
-
-function CollapsibleSection({ title, count, children }: CollapsibleSectionProps) {
+}) {
   const [expanded, setExpanded] = useState(false);
   return (
-    <div className="border rounded-md">
+    <div>
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-left hover:bg-muted/50"
+        className="mb-2 flex w-full items-center gap-2 py-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         aria-expanded={expanded}
       >
         {expanded ? (
@@ -58,47 +36,163 @@ function CollapsibleSection({ title, count, children }: CollapsibleSectionProps)
         ) : (
           <ChevronRight className="h-4 w-4" />
         )}
-        <span>
-          {title} ({count})
+        <span>{title}</span>
+        <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+          {count}
         </span>
       </button>
-      {expanded && <div className="border-t">{children}</div>}
+      {expanded && <div className="space-y-2">{children}</div>}
     </div>
   );
 }
 
-export function CandidateList({ candidates, onSelect, disabled }: CandidateListProps) {
+export function CandidateList({
+  candidates,
+  onSelect,
+  disabled,
+}: CandidateListProps) {
+  const [searchQuery, setSearchQuery] = useState("");
+
   if (candidates.length === 0) {
     return (
-      <div className="text-center py-8 text-muted-foreground">
+      <div className="py-12 text-center text-sm text-muted-foreground">
         No eligible candidates found after filtering.
       </div>
     );
   }
 
-  const { topRecommendation, closeTierAlternatives, strongAlternatives, backupOptions } =
-    tierCandidates(candidates);
+  const trimmedQuery = searchQuery.trim().toLowerCase();
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">
-        Candidates are grouped by similarity to the top recommendation. All scores,
-        rationale, and breakdowns remain accessible.
-      </p>
+      <SearchBar
+        value={searchQuery}
+        onChange={setSearchQuery}
+        onClear={() => setSearchQuery("")}
+      />
+      {trimmedQuery ? (
+        <FilteredResults
+          candidates={candidates}
+          query={trimmedQuery}
+          onSelect={onSelect}
+          disabled={disabled}
+        />
+      ) : (
+        <TieredResults
+          candidates={candidates}
+          onSelect={onSelect}
+          disabled={disabled}
+        />
+      )}
+    </div>
+  );
+}
 
+function SearchBar({
+  value,
+  onChange,
+  onClear,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        type="search"
+        role="searchbox"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search by name"
+        aria-label="Search candidates by name"
+        className="h-9 pl-9 pr-9 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Clear search"
+          className="absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function FilteredResults({
+  candidates,
+  query,
+  onSelect,
+  disabled,
+}: {
+  candidates: ScoredCandidate[];
+  query: string;
+  onSelect: (c: ScoredCandidate) => void;
+  disabled: boolean;
+}) {
+  const matches = useMemo(
+    () => candidates.filter((c) => c.name.toLowerCase().includes(query)),
+    [candidates, query],
+  );
+
+  if (matches.length === 0) {
+    return (
+      <div className="py-8 text-center text-sm text-muted-foreground">
+        No candidates match &ldquo;{query}&rdquo;.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        {matches.length} match{matches.length === 1 ? "" : "es"}
+      </p>
+      {matches.map((c) => (
+        <CandidateRow
+          key={c.employee_id}
+          candidate={c}
+          onSelect={onSelect}
+          disabled={disabled}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TieredResults({
+  candidates,
+  onSelect,
+  disabled,
+}: {
+  candidates: ScoredCandidate[];
+  onSelect: (c: ScoredCandidate) => void;
+  disabled: boolean;
+}) {
+  const {
+    topRecommendation,
+    closeTierAlternatives,
+    strongAlternatives,
+    backupOptions,
+  } = tierCandidates(candidates);
+
+  return (
+    <div className="space-y-5">
+      {/* Top recommendation */}
       <div className="space-y-2">
-        <div className="text-sm font-semibold">Top Recommendation</div>
-        <Table>
-          <CandidateTableHeader />
-          <TableBody>
-            <CandidateRow
-              key={topRecommendation.employee_id}
-              candidate={topRecommendation}
-              onSelect={onSelect}
-              disabled={disabled}
-            />
-          </TableBody>
-        </Table>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Top Recommendation
+        </p>
+        <CandidateRow
+          candidate={topRecommendation}
+          onSelect={onSelect}
+          disabled={disabled}
+          isTop
+        />
       </div>
 
       {closeTierAlternatives.length > 0 && (
@@ -106,55 +200,43 @@ export function CandidateList({ candidates, onSelect, disabled }: CandidateListP
           title="Very Close Alternatives"
           count={closeTierAlternatives.length}
         >
-          <Table>
-            <CandidateTableHeader />
-            <TableBody>
-              {closeTierAlternatives.map((candidate) => (
-                <CandidateRow
-                  key={candidate.employee_id}
-                  candidate={candidate}
-                  onSelect={onSelect}
-                  disabled={disabled}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          {closeTierAlternatives.map((c) => (
+            <CandidateRow
+              key={c.employee_id}
+              candidate={c}
+              onSelect={onSelect}
+              disabled={disabled}
+            />
+          ))}
         </CollapsibleSection>
       )}
 
       {strongAlternatives.length > 0 && (
-        <CollapsibleSection title="Strong Alternatives" count={strongAlternatives.length}>
-          <Table>
-            <CandidateTableHeader />
-            <TableBody>
-              {strongAlternatives.map((candidate) => (
-                <CandidateRow
-                  key={candidate.employee_id}
-                  candidate={candidate}
-                  onSelect={onSelect}
-                  disabled={disabled}
-                />
-              ))}
-            </TableBody>
-          </Table>
+        <CollapsibleSection
+          title="Strong Alternatives"
+          count={strongAlternatives.length}
+        >
+          {strongAlternatives.map((c) => (
+            <CandidateRow
+              key={c.employee_id}
+              candidate={c}
+              onSelect={onSelect}
+              disabled={disabled}
+            />
+          ))}
         </CollapsibleSection>
       )}
 
       {backupOptions.length > 0 && (
         <CollapsibleSection title="Backup Options" count={backupOptions.length}>
-          <Table>
-            <CandidateTableHeader />
-            <TableBody>
-              {backupOptions.map((candidate) => (
-                <CandidateRow
-                  key={candidate.employee_id}
-                  candidate={candidate}
-                  onSelect={onSelect}
-                  disabled={disabled}
-                />
-              ))}
-            </TableBody>
-          </Table>
+          {backupOptions.map((c) => (
+            <CandidateRow
+              key={c.employee_id}
+              candidate={c}
+              onSelect={onSelect}
+              disabled={disabled}
+            />
+          ))}
         </CollapsibleSection>
       )}
     </div>

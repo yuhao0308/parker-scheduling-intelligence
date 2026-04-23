@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { useWeights, useUpdateWeights } from "@/lib/queries";
+import { useWeights, useUpdateWeights, useResetCalendar } from "@/lib/queries";
 import type { ScoringWeights } from "@/lib/types";
 
 const weightLabels: Record<string, string> = {
@@ -20,7 +20,19 @@ const weightLabels: Record<string, string> = {
 export default function WeightsPage() {
   const { data: weights, isLoading, isError, error } = useWeights();
   const updateMutation = useUpdateWeights();
+  const resetCalendarMutation = useResetCalendar();
   const [draftState, setDraft] = useState<ScoringWeights | null>(null);
+
+  function handleResetCalendar() {
+    if (resetCalendarMutation.isPending) return;
+    if (
+      !window.confirm(
+        "Demo reset: delete every scheduled shift, callout, and invite? The calendar will be empty until you re-run Auto-Gen.",
+      )
+    )
+      return;
+    resetCalendarMutation.mutate();
+  }
 
   if (isLoading) return <div className="p-8 text-muted-foreground">Loading weights...</div>;
   if (isError) return <div className="p-8 text-destructive">{error.message}</div>;
@@ -96,6 +108,47 @@ export default function WeightsPage() {
       {updateMutation.isSuccess && (
         <Badge className="bg-emerald-100 text-emerald-800">Saved successfully</Badge>
       )}
+
+      <Card className="border-dashed border-amber-300 bg-amber-50/40">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between text-base">
+            <span className="flex items-center gap-2">
+              <Badge className="bg-amber-200 text-amber-900">Demo only</Badge>
+              <span>Reset calendar</span>
+            </span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="text-sm text-muted-foreground">
+            Wipe every scheduled shift, callout, and invite so the month starts
+            empty. Use this before a fresh Auto-Gen walkthrough on the Schedule
+            page.
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <Button
+              variant="outline"
+              className="border-amber-400 text-amber-900 hover:bg-amber-100"
+              onClick={handleResetCalendar}
+              disabled={resetCalendarMutation.isPending}
+            >
+              {resetCalendarMutation.isPending
+                ? "Resetting..."
+                : "Reset calendar"}
+            </Button>
+            {resetCalendarMutation.isSuccess && (
+              <span className="text-[11px] text-emerald-700">
+                Cleared {resetCalendarMutation.data.entries_deleted} shift
+                {resetCalendarMutation.data.entries_deleted === 1 ? "" : "s"}.
+              </span>
+            )}
+            {resetCalendarMutation.isError && (
+              <span className="text-[11px] text-destructive">
+                {resetCalendarMutation.error.message}
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

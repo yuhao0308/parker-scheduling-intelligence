@@ -65,8 +65,14 @@ function aggregateDayStatus(
     const scoped = slots.filter(
       (s) => s.shift_label === key && (!selectedUnit || s.unit_id === selectedUnit),
     );
+    // Count only ACCEPTED invitees as real coverage. PENDING / DECLINED /
+    // UNSENT shouldn't paint the pill green — they haven't confirmed the shift.
     const assigned = scoped.reduce(
-      (n, s) => n + s.assigned_employees.length,
+      (n, s) =>
+        n +
+        s.assigned_employees.filter(
+          (e) => e.confirmation_status === "ACCEPTED",
+        ).length,
       0,
     );
     const required = scoped.reduce((n, s) => n + s.required_count, 0);

@@ -35,28 +35,12 @@ from app.schemas.schedule import (
 )
 from app.services.confirmation import send_week_confirmations
 from app.services.scheduler import generate_monthly_schedule, regenerate_week_schedule
+from app.services.staffing_requirements import slot_requirements
 from app.services.workload import build_work_hours_snapshot
 
 router = APIRouter(tags=["schedule"])
 
 SHIFT_LABELS = ["DAY", "EVENING", "NIGHT"]
-
-# Hardcoded minimum-required headcount per unit per shift for the POC.
-# Used to compute "assigned / required" ratios in the month calendar.
-# Keys must cover every active unit_id emitted by /schedule/monthly; missing
-# entries fall back to DEFAULT_REQUIRED.
-UNIT_SHIFT_REQUIRED: dict[str, dict[str, int]] = {
-    "U-SA1": {"DAY": 5, "EVENING": 5, "NIGHT": 4},
-    "U-SA2": {"DAY": 5, "EVENING": 5, "NIGHT": 4},
-    "U-SA3": {"DAY": 4, "EVENING": 4, "NIGHT": 3},
-    "U-SA4": {"DAY": 4, "EVENING": 4, "NIGHT": 3},
-    "U-LT1": {"DAY": 5, "EVENING": 5, "NIGHT": 4},
-    "U-LT2": {"DAY": 5, "EVENING": 5, "NIGHT": 4},
-    "U-LT3": {"DAY": 4, "EVENING": 4, "NIGHT": 3},
-    "U-LT4": {"DAY": 4, "EVENING": 4, "NIGHT": 3},
-    "U-LT5": {"DAY": 3, "EVENING": 3, "NIGHT": 2},
-}
-DEFAULT_REQUIRED = {"DAY": 4, "EVENING": 4, "NIGHT": 3}
 
 
 @router.get(
@@ -167,16 +151,21 @@ async def get_monthly_schedule(
                 assigned = entry_map.get(key, [])
                 callout_count = callout_map.get(key, 0)
                 unresolved = unresolved_map.get(key, 0)
-                required_count = UNIT_SHIFT_REQUIRED.get(unit_id, DEFAULT_REQUIRED).get(
-                    label, 0
+                required_count = slot_requirements(unit, label).total
+                # Coverage status reflects confirmed coverage only: an
+                # invited-but-not-accepted shift is not real coverage. PENDING
+                # / DECLINED / UNSENT are still shown in assigned_employees so
+                # the supervisor sees the full invitee list when they click a
+                # slot, but they do not paint the cell green.
+                confirmed_count = sum(
+                    1 for a in assigned if a.confirmation_status == "ACCEPTED"
                 )
-                assigned_count = len(assigned)
 
                 if unresolved > 0:
                     status = "callout"
-                elif assigned_count == 0:
+                elif len(assigned) == 0:
                     status = "unassigned"
-                elif required_count > 0 and assigned_count >= required_count:
+                elif required_count > 0 and confirmed_count >= required_count:
                     status = "fully_staffed"
                 else:
                     status = "partially_staffed"

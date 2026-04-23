@@ -34,6 +34,7 @@ from app.services.scoring import (
     score_candidate,
 )
 from app.services.shift_utils import SHIFT_DURATION_HOURS
+from app.services.staffing_requirements import slot_requirements
 from app.services.staff_loader import (
     build_candidate_records,
     load_exclusions,
@@ -49,10 +50,6 @@ logger = structlog.get_logger()
 FT_WEEKLY_MAX = 41.25  # 5 shifts × 8.25h
 PT_WEEKLY_MAX = 24.75  # 3 shifts × 8.25h
 PER_DIEM_WEEKLY_MAX = 41.25  # per diem can work up to full-time
-
-# Each unit needs this many staff per shift (demo simplification)
-STAFF_PER_SHIFT_LICENSED = 1  # 1 RN/LPN per shift
-STAFF_PER_SHIFT_CERTIFIED = 1  # 1 CNA/PCT per shift
 
 SHIFT_ORDER = [ShiftLabel.DAY, ShiftLabel.EVENING, ShiftLabel.NIGHT]
 
@@ -125,8 +122,6 @@ async def generate_monthly_schedule(
     base_hours_map = await load_hours_map(db)
 
     # Running state
-    running_hours: dict[str, float] = defaultdict(float)
-    # Track per-week hours (week = Mon-Sun)
     weekly_hours: dict[tuple[str, int], float] = defaultdict(float)  # (emp_id, week_num) -> hours
     # Track shifts assigned per day per employee for rest-window enforcement
     daily_shifts: dict[tuple[str, date], list[tuple[date, ShiftLabel]]] = defaultdict(list)
@@ -142,55 +137,58 @@ async def generate_monthly_schedule(
             unit_typology = UnitTypology(unit.typology.value)
 
             for shift_label in SHIFT_ORDER:
-                # Staffing model: 1 staff member per unit per shift.
-                # Try preferred bucket first, fall back to any available.
+                requirements = slot_requirements(unit, shift_label)
                 if unit_typology == UnitTypology.SUBACUTE:
-                    bucket_order = ["licensed", "certified"]
+                    bucket_order = [
+                        ("licensed", requirements.licensed),
+                        ("certified", requirements.certified),
+                    ]
                 else:
-                    bucket_order = ["certified", "licensed"]
+                    bucket_order = [
+                        ("certified", requirements.certified),
+                        ("licensed", requirements.licensed),
+                    ]
 
-                assigned = None
-                for required_bucket in bucket_order:
-                    assigned = _assign_one(
-                        candidates=all_candidates,
-                        required_bucket=required_bucket,
-                        unit=unit,
-                        unit_typology=unit_typology,
-                        current_date=current_date,
-                        shift_label=shift_label,
-                        week_num=week_num,
-                        weekly_hours=weekly_hours,
-                        daily_shifts=daily_shifts,
-                        base_hours_map=base_hours_map,
-                        scoring_config=scoring_config,
-                        settings=settings,
-                        db=db,
-                    )
-                    if assigned:
-                        break  # filled from this bucket, no need to try fallback
+                for required_bucket, count_needed in bucket_order:
+                    for ordinal in range(1, count_needed + 1):
+                        assigned = _assign_one(
+                            candidates=all_candidates,
+                            required_bucket=required_bucket,
+                            unit=unit,
+                            unit_typology=unit_typology,
+                            current_date=current_date,
+                            shift_label=shift_label,
+                            week_num=week_num,
+                            weekly_hours=weekly_hours,
+                            daily_shifts=daily_shifts,
+                            base_hours_map=base_hours_map,
+                            scoring_config=scoring_config,
+                            settings=settings,
+                            db=db,
+                        )
 
-                if assigned:
-                    emp_id = assigned.employee_id
-                    entry = ScheduleEntry(
-                        employee_id=emp_id,
-                        unit_id=unit.unit_id,
-                        shift_date=current_date,
-                        shift_label=shift_label,
-                        is_published=False,
-                    )
-                    db.add(entry)
-                    entries_created += 1
+                        if not assigned:
+                            warnings.append(
+                                f"Unfilled: {unit.unit_id} {shift_label.value} "
+                                f"{current_date} [{required_bucket} #{ordinal}]"
+                            )
+                            continue
 
-                    # Update running state
-                    running_hours[emp_id] += SHIFT_DURATION_HOURS
-                    weekly_hours[(emp_id, week_num)] += SHIFT_DURATION_HOURS
-                    daily_shifts[(emp_id, current_date)].append(
-                        (current_date, shift_label)
-                    )
-                else:
-                    warnings.append(
-                        f"Unfilled: {unit.unit_id} {shift_label.value} {current_date}"
-                    )
+                        emp_id = assigned.employee_id
+                        entry = ScheduleEntry(
+                            employee_id=emp_id,
+                            unit_id=unit.unit_id,
+                            shift_date=current_date,
+                            shift_label=shift_label,
+                            is_published=False,
+                        )
+                        db.add(entry)
+                        entries_created += 1
+
+                        weekly_hours[(emp_id, week_num)] += SHIFT_DURATION_HOURS
+                        daily_shifts[(emp_id, current_date)].append(
+                            (current_date, shift_label)
+                        )
 
     await db.commit()
 
@@ -269,12 +267,6 @@ async def regenerate_week_schedule(
             delete(ScheduleEntry).where(ScheduleEntry.id.in_(removable_ids))
         )
 
-    # Index preserved slots so we skip them in the solver.
-    frozen_slots: set[tuple[date, str, ShiftLabel]] = set()
-    for e in preserved:
-        label = e.shift_label if isinstance(e.shift_label, ShiftLabel) else ShiftLabel(e.shift_label.value)
-        frozen_slots.add((e.shift_date, e.unit_id, label))
-
     # Pre-seed running state from preserved entries so hour budgets & rest
     # windows account for already-accepted shifts.
     weekly_hours: dict[tuple[str, int], float] = defaultdict(float)
@@ -295,10 +287,22 @@ async def regenerate_week_schedule(
         ),
     )
 
-    # Build candidate pool from allowlist
     staff_list = await load_staff_pool(db)
+    all_staff_candidates = build_candidate_records(staff_list)
+    staff_by_id = {c.employee_id: c for c in all_staff_candidates}
     pool_set = set(employee_pool)
-    all_candidates = [c for c in build_candidate_records(staff_list) if c.employee_id in pool_set]
+    all_candidates = [c for c in all_staff_candidates if c.employee_id in pool_set]
+
+    preserved_counts: dict[tuple[date, str, ShiftLabel], dict[str, int]] = defaultdict(
+        lambda: {"licensed": 0, "certified": 0}
+    )
+    for e in preserved:
+        label = e.shift_label if isinstance(e.shift_label, ShiftLabel) else ShiftLabel(e.shift_label.value)
+        staff = staff_by_id.get(e.employee_id)
+        if not staff:
+            continue
+        bucket = "licensed" if staff.license in LICENSED_ROLES else "certified"
+        preserved_counts[(e.shift_date, e.unit_id, label)][bucket] += 1
 
     scoring_config = load_scoring_config(settings.scoring_weights_path)
     base_hours_map = await load_hours_map(db)
@@ -314,55 +318,74 @@ async def regenerate_week_schedule(
             unit_typology = UnitTypology(unit.typology.value)
 
             for shift_label in SHIFT_ORDER:
-                if (current_date, unit.unit_id, shift_label) in frozen_slots:
-                    continue  # preserved by an accepted/pending nurse
-
+                requirements = slot_requirements(unit, shift_label)
+                key = (current_date, unit.unit_id, shift_label)
+                preserved_for_slot = preserved_counts.get(
+                    key, {"licensed": 0, "certified": 0}
+                )
                 if unit_typology == UnitTypology.SUBACUTE:
-                    bucket_order = ["licensed", "certified"]
+                    bucket_order = [
+                        (
+                            "licensed",
+                            max(0, requirements.licensed - preserved_for_slot["licensed"]),
+                        ),
+                        (
+                            "certified",
+                            max(0, requirements.certified - preserved_for_slot["certified"]),
+                        ),
+                    ]
                 else:
-                    bucket_order = ["certified", "licensed"]
+                    bucket_order = [
+                        (
+                            "certified",
+                            max(0, requirements.certified - preserved_for_slot["certified"]),
+                        ),
+                        (
+                            "licensed",
+                            max(0, requirements.licensed - preserved_for_slot["licensed"]),
+                        ),
+                    ]
 
-                assigned = None
-                for required_bucket in bucket_order:
-                    assigned = _assign_one(
-                        candidates=all_candidates,
-                        required_bucket=required_bucket,
-                        unit=unit,
-                        unit_typology=unit_typology,
-                        current_date=current_date,
-                        shift_label=shift_label,
-                        week_num=week_num,
-                        weekly_hours=weekly_hours,
-                        daily_shifts=daily_shifts,
-                        base_hours_map=base_hours_map,
-                        scoring_config=scoring_config,
-                        settings=settings,
-                        db=db,
-                    )
-                    if assigned:
-                        break
+                for required_bucket, count_needed in bucket_order:
+                    for ordinal in range(1, count_needed + 1):
+                        assigned = _assign_one(
+                            candidates=all_candidates,
+                            required_bucket=required_bucket,
+                            unit=unit,
+                            unit_typology=unit_typology,
+                            current_date=current_date,
+                            shift_label=shift_label,
+                            week_num=week_num,
+                            weekly_hours=weekly_hours,
+                            daily_shifts=daily_shifts,
+                            base_hours_map=base_hours_map,
+                            scoring_config=scoring_config,
+                            settings=settings,
+                            db=db,
+                        )
+                        if not assigned:
+                            warnings.append(
+                                f"Unfilled: {unit.unit_id} {shift_label.value} "
+                                f"{current_date} [{required_bucket} #{ordinal}]"
+                            )
+                            continue
 
-                if assigned:
-                    emp_id = assigned.employee_id
-                    entry = ScheduleEntry(
-                        employee_id=emp_id,
-                        unit_id=unit.unit_id,
-                        shift_date=current_date,
-                        shift_label=shift_label,
-                        is_published=False,
-                        confirmation_status=ConfirmationStatus.UNSENT,
-                    )
-                    db.add(entry)
-                    entries_created += 1
+                        emp_id = assigned.employee_id
+                        entry = ScheduleEntry(
+                            employee_id=emp_id,
+                            unit_id=unit.unit_id,
+                            shift_date=current_date,
+                            shift_label=shift_label,
+                            is_published=False,
+                            confirmation_status=ConfirmationStatus.UNSENT,
+                        )
+                        db.add(entry)
+                        entries_created += 1
 
-                    weekly_hours[(emp_id, week_num)] += SHIFT_DURATION_HOURS
-                    daily_shifts[(emp_id, current_date)].append(
-                        (current_date, shift_label)
-                    )
-                else:
-                    warnings.append(
-                        f"Unfilled: {unit.unit_id} {shift_label.value} {current_date}"
-                    )
+                        weekly_hours[(emp_id, week_num)] += SHIFT_DURATION_HOURS
+                        daily_shifts[(emp_id, current_date)].append(
+                            (current_date, shift_label)
+                        )
 
     await db.commit()
 

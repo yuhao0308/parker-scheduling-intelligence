@@ -564,7 +564,7 @@ export function WorkHoursMonitor() {
   return (
     <>
       <Button
-        className="fixed right-6 bottom-6 z-40 h-12 rounded-2xl border border-slate-300/70 bg-white/95 px-4 text-slate-900 shadow-lg shadow-slate-900/10 hover:bg-slate-50"
+        className="fixed left-6 bottom-6 z-40 h-12 rounded-2xl border border-slate-300/70 bg-white/95 px-4 text-slate-900 shadow-lg shadow-slate-900/10 hover:bg-slate-50"
         variant="outline"
         onClick={() => setOpen(true)}
       >

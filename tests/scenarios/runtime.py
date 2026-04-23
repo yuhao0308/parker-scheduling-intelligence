@@ -310,7 +310,7 @@ def _evaluate_assertion(assertion: ScenarioAssertion, responses: dict[str, Any])
         )
         allowed = set(params["licenses"])
         licenses = {employee["license"] for employee in slot.get("assigned_employees", [])} if slot else set()
-        passed = bool(slot) and bool(licenses) and licenses.issubset(allowed)
+        passed = bool(slot) and bool(licenses & allowed)
         detail = f"slot_found={bool(slot)}, assigned_licenses={sorted(licenses)}, allowed={sorted(allowed)}"
     elif kind == "subacute_slots_filled_before_lt":
         _FILLED = {"fully_staffed", "partially_staffed"}

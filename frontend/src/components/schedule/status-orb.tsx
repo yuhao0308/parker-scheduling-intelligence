@@ -8,7 +8,7 @@ import type { ConfirmationStatus } from "@/lib/types";
 //   yellow= PENDING  — confirmation sent, awaiting reply
 //   green = ACCEPTED — nurse accepted
 //   red   = DECLINED — nurse declined; needs remove / replace
-//   slate = REPLACED — slot cleared (manually removed or replaced)
+//   slate = REPLACED — slot was reopened and later reassigned/cleared
 const ORB_CLASSES: Record<ConfirmationStatus, string> = {
   UNSENT: "bg-slate-300",
   PENDING: "bg-amber-400",
@@ -22,7 +22,7 @@ const ORB_LABEL: Record<ConfirmationStatus, string> = {
   PENDING: "Awaiting reply",
   ACCEPTED: "Accepted",
   DECLINED: "Declined",
-  REPLACED: "Replaced / removed",
+  REPLACED: "Reassigned / cleared",
 };
 
 interface StatusOrbProps {

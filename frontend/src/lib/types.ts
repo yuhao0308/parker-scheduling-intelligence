@@ -229,10 +229,9 @@ export interface AutogenSubmitRequest {
 export interface AutogenSubmitResult {
   week_start: string;
   entries_generated: number;
-  slots_frozen: number;
+  entries_preserved: number;
   notifications_sent: number;
-  entries_marked: number;
-  counts_by_status: StatusCounts;
+  unfilled_slots: number;
   warnings: string[];
 }
 
@@ -299,6 +298,30 @@ export interface RespondConfirmationResult {
   replacement: CalloutResponse | null;
 }
 
+export interface CommitDecision {
+  entry_id: number;
+  keep: boolean;
+}
+
+export interface CommitDecisionsRequest {
+  week_start: string;
+  employee_pool: string[];
+  decisions: CommitDecision[];
+}
+
+export interface CommitDecisionsResult {
+  week_start: string;
+  accepted_count: number;
+  declined_count: number;
+  skipped_count: number;
+  declined_employee_ids: string[];
+  reroll_entries_generated: number;
+  reroll_notifications_sent: number;
+  unfilled_slots: number;
+  warnings: string[];
+  summary: StatusCounts;
+}
+
 export interface ReplaceEntryRequest {
   recommendation_log_id: number;
   selected_employee_id: string;
@@ -316,6 +339,16 @@ export interface RemoveEntryResult {
   new_status: ConfirmationStatus;
   slot_now_open: boolean;
   canceled_notification_id: number | null;
+}
+
+export interface TimeoutSweepRequest {
+  entry_ids: number[];
+}
+
+export interface TimeoutSweepResult {
+  processed: number[];
+  skipped: number[];
+  processed_at: string;
 }
 
 // --- Outreach (last-minute callout) flow types ---

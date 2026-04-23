@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.session import get_db
 from app.schemas.confirmation import (
+    CommitDecisionsRequest,
+    CommitDecisionsResult,
     ConfirmationListOut,
     RemoveEntryResult,
     RespondConfirmationRequest,
@@ -18,13 +20,17 @@ from app.schemas.confirmation import (
     ReplaceEntryResult,
     SendConfirmationsRequest,
     SendConfirmationsResult,
+    TimeoutSweepRequest,
+    TimeoutSweepResult,
 )
 from app.services.confirmation import (
+    commit_week_decisions,
     list_week_confirmations,
     remove_entry,
     replace_declined_entry,
     respond_to_confirmation,
     send_week_confirmations,
+    timeout_sweep_entries,
 )
 
 router = APIRouter(tags=["confirmations"])
@@ -56,6 +62,29 @@ async def list_confirmations(
     db: AsyncSession = Depends(get_db),
 ) -> ConfirmationListOut:
     return await list_week_confirmations(db, week_start, unit_ids)
+
+
+@router.post(
+    "/schedule/confirmations/commit",
+    response_model=CommitDecisionsResult,
+    summary="Bulk-commit scheduler Accept/Decline decisions for the week",
+    description=(
+        "Applies all reviewed Auto-Gen decisions in one pass. Checked shifts are "
+        "accepted, unchecked shifts are declined, and any declined gaps are "
+        "re-rolled once against the remaining employee pool."
+    ),
+)
+async def commit_confirmations(
+    req: CommitDecisionsRequest,
+    db: AsyncSession = Depends(get_db),
+) -> CommitDecisionsResult:
+    return await commit_week_decisions(
+        db=db,
+        week_start=req.week_start,
+        decisions=req.decisions,
+        employee_pool=req.employee_pool,
+        settings=settings,
+    )
 
 
 @router.post(
@@ -106,3 +135,23 @@ async def remove_confirmation_entry(
     db: AsyncSession = Depends(get_db),
 ) -> RemoveEntryResult:
     return await remove_entry(db=db, entry_id=entry_id)
+
+
+@router.post(
+    "/schedule/confirmations/timeout-sweep",
+    response_model=TimeoutSweepResult,
+    summary="Bulk-transition expired PENDING entries to DECLINED",
+    description=(
+        "Accepts a list of entry_ids that the UI has observed as expired "
+        "(sent_at + confirmation_timeout_seconds < now). Non-PENDING entries "
+        "are reported in `skipped` rather than raising, since races with manual "
+        "Accept/Decline clicks are expected during a sweep. Does NOT generate "
+        "replacement recommendations — supervisors resolve timed-out rows one "
+        "at a time from the Auto-Gen panel."
+    ),
+)
+async def timeout_sweep(
+    req: TimeoutSweepRequest,
+    db: AsyncSession = Depends(get_db),
+) -> TimeoutSweepResult:
+    return await timeout_sweep_entries(db=db, entry_ids=req.entry_ids)

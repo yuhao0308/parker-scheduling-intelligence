@@ -4,6 +4,8 @@ import type {
   CalloutDayCount,
   CalloutRequest,
   CalloutResponse,
+  CommitDecisionsRequest,
+  CommitDecisionsResult,
   ConfirmationList,
   DemoConfig,
   GenerateScheduleRequest,
@@ -28,6 +30,8 @@ import type {
   SendOutreachRequest,
   SendOutreachResult,
   StaffOut,
+  TimeoutSweepRequest,
+  TimeoutSweepResult,
   UnitOut,
   WorkHoursSnapshot,
 } from "./types";
@@ -80,6 +84,9 @@ export const getWeights = () => request<ScoringWeights>("/config/weights");
 export const updateWeights = (payload: Partial<ScoringWeights>) =>
   put<ScoringWeights>("/config/weights", payload);
 
+export const resetCalendar = () =>
+  post<{ entries_deleted: number }>("/config/reset-calendar", {});
+
 export const getMonthlySchedule = (year: number, month: number) =>
   request<MonthlySchedule>(`/schedule/monthly?year=${year}&month=${month}`);
 
@@ -123,11 +130,17 @@ export const respondConfirmation = (
     req,
   );
 
+export const commitDecisions = (req: CommitDecisionsRequest) =>
+  post<CommitDecisionsResult>("/schedule/confirmations/commit", req);
+
 export const replaceEntry = (entryId: number, req: ReplaceEntryRequest) =>
   post<ReplaceEntryResult>(`/schedule/confirmations/${entryId}/replace`, req);
 
 export const removeEntry = (entryId: number) =>
   post<RemoveEntryResult>(`/schedule/confirmations/${entryId}/remove`, {});
+
+export const timeoutSweep = (req: TimeoutSweepRequest) =>
+  post<TimeoutSweepResult>("/schedule/confirmations/timeout-sweep", req);
 
 // Callout outreach flow
 export const sendOutreach = (calloutId: number, req: SendOutreachRequest) =>

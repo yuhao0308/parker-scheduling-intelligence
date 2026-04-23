@@ -276,6 +276,28 @@ SCENARIOS: list[ScenarioSpec] = [
                         "U-SA1",
                         date(2019, 1, i),
                     )
+                    for i in range(1, 11)
+                ],
+                *[
+                    _staff(
+                        f"CNA-SA{i}",
+                        f"Subacute CNA {i}",
+                        LicenseType.CNA,
+                        "FT",
+                        "U-SA1",
+                        date(2019, 2, i),
+                    )
+                    for i in range(1, 13)
+                ],
+                *[
+                    _staff(
+                        f"RN-LT{i}",
+                        f"LT RN {i}",
+                        LicenseType.RN,
+                        "FT",
+                        "U-LT1",
+                        date(2019, 3, i),
+                    )
                     for i in range(1, 6)
                 ],
                 *[
@@ -285,9 +307,9 @@ SCENARIOS: list[ScenarioSpec] = [
                         LicenseType.CNA,
                         "FT",
                         "U-LT1",
-                        date(2019, 2, i),
+                        date(2019, 4, i),
                     )
-                    for i in range(1, 6)
+                    for i in range(1, 19)
                 ],
             ],
         ),
@@ -426,6 +448,17 @@ SCENARIOS: list[ScenarioSpec] = [
             staff=[
                 *[
                     _staff(
+                        f"RN-FULL{i}",
+                        f"Coverage RN {i}",
+                        LicenseType.RN,
+                        "FT",
+                        "U-LT1",
+                        date(2019, 2, i),
+                    )
+                    for i in range(1, 6)
+                ],
+                *[
+                    _staff(
                         f"CNA-FULL{i}",
                         f"Coverage CNA {i}",
                         LicenseType.CNA,
@@ -433,7 +466,7 @@ SCENARIOS: list[ScenarioSpec] = [
                         "U-LT1",
                         date(2019, 3, i),
                     )
-                    for i in range(1, 6)
+                    for i in range(1, 19)
                 ],
             ],
         ),

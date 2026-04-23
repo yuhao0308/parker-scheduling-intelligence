@@ -66,6 +66,30 @@ class RespondConfirmationResult(BaseModel):
     replacement: Optional[CalloutResponse] = None
 
 
+class CommitDecision(BaseModel):
+    entry_id: int
+    keep: bool = True
+
+
+class CommitDecisionsRequest(BaseModel):
+    week_start: date
+    employee_pool: List[str]
+    decisions: List[CommitDecision]
+
+
+class CommitDecisionsResult(BaseModel):
+    week_start: date
+    accepted_count: int
+    declined_count: int
+    skipped_count: int
+    declined_employee_ids: List[str]
+    reroll_entries_generated: int = 0
+    reroll_notifications_sent: int = 0
+    unfilled_slots: int = 0
+    warnings: List[str] = []
+    summary: StatusCounts
+
+
 class ReplaceEntryRequest(BaseModel):
     recommendation_log_id: int
     selected_employee_id: str
@@ -83,3 +107,13 @@ class RemoveEntryResult(BaseModel):
     new_status: str
     slot_now_open: bool = True
     canceled_notification_id: Optional[int] = None
+
+
+class TimeoutSweepRequest(BaseModel):
+    entry_ids: List[int]
+
+
+class TimeoutSweepResult(BaseModel):
+    processed: List[int]
+    skipped: List[int]
+    processed_at: datetime

@@ -3,29 +3,42 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
-  useDemoConfig,
   useOutreach,
   useRespondOutreach,
   useSendOutreach,
 } from "@/lib/queries";
+import { CheckCircle2, XCircle, Clock, SkipForward, Send, Users } from "lucide-react";
 import type { CalloutResponse, ScoredCandidate } from "@/lib/types";
 
 const FILLED_BY_OTHER_MARKER = "filled by another teammate";
 
-const STATUS_BADGE: Record<string, string> = {
-  SENT: "bg-amber-100 text-amber-800",
-  ACCEPTED: "bg-emerald-100 text-emerald-800",
-  DECLINED: "bg-red-100 text-red-800",
-  TIMEOUT: "bg-slate-100 text-slate-700",
-  SKIPPED: "bg-slate-100 text-slate-700",
-  CANCELED: "bg-slate-100 text-slate-500 line-through",
+const STATUS_STYLE: Record<
+  string,
+  { label: string; className: string; icon?: React.ElementType }
+> = {
+  SENT: { label: "Pending", className: "bg-amber-100 text-amber-800 border-amber-200" },
+  ACCEPTED: { label: "Accepted", className: "bg-emerald-100 text-emerald-800 border-emerald-200", icon: CheckCircle2 },
+  DECLINED: { label: "Declined", className: "bg-red-100 text-red-800 border-red-200", icon: XCircle },
+  TIMEOUT: { label: "Timed out", className: "bg-slate-100 text-slate-600 border-slate-200", icon: Clock },
+  SKIPPED: { label: "Skipped", className: "bg-slate-100 text-slate-600 border-slate-200", icon: SkipForward },
+  CANCELED: { label: "Canceled", className: "bg-slate-100 text-slate-400 border-slate-200 line-through" },
 };
 
-// Distinct badge for sibling outreach canceled because ACCEPTED elsewhere.
-const FILLED_BADGE = "bg-teal-100 text-teal-800";
+const FILLED_STYLE = {
+  label: "Filled!",
+  className: "bg-teal-100 text-teal-800 border-teal-200",
+  icon: CheckCircle2,
+};
 
 interface OutreachConsoleProps {
   result: CalloutResponse;
@@ -34,18 +47,12 @@ interface OutreachConsoleProps {
 
 export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
   const { data: notifications = [] } = useOutreach(result.callout_id);
-  const { data: demoConfig } = useDemoConfig();
   const sendMutation = useSendOutreach();
   const respondMutation = useRespondOutreach();
 
-  // Cumulative deprioritized set — grows when respondOutreach returns
-  // `deprioritized_employee_ids` for TIMEOUT/DECLINED replies. Pushes those
-  // candidates to the bottom of the queue but doesn't remove them (supervisor
-  // spec: 15m-timeout keeps them eligible, just lower priority).
   const [deprioritized, setDeprioritized] = useState<Set<string>>(new Set());
-
-  const outreachTimeoutSeconds = demoConfig?.outreach_timeout_seconds ?? 15;
-  const outreachTimeoutLabel = demoConfig?.outreach_timeout_label ?? "15 minutes";
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmAllOpen, setConfirmAllOpen] = useState(false);
 
   const candidatesByEmp = useMemo(() => {
     const m = new Map<string, ScoredCandidate>();
@@ -54,9 +61,8 @@ export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
   }, [result.candidates]);
 
   const contacted = new Set(notifications.map((n) => n.employee_id));
-  const pending = notifications.find((n) => n.status === "SENT");
+  const pendings = notifications.filter((n) => n.status === "SENT");
 
-  // Re-ordered candidate queue: remaining first, deprioritized at bottom.
   const orderedCandidates = useMemo(() => {
     const remaining: ScoredCandidate[] = [];
     const bottom: ScoredCandidate[] = [];
@@ -67,19 +73,44 @@ export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
     return [...remaining, ...bottom];
   }, [result.candidates, deprioritized]);
 
-  const nextCandidate = orderedCandidates.find(
+  const uncontactedCandidates = orderedCandidates.filter(
     (c) => !contacted.has(c.employee_id),
   );
 
-  function handleSend(candidate: ScoredCandidate) {
-    sendMutation.mutate({
-      calloutId: result.callout_id,
-      req: {
-        recommendation_log_id: result.recommendation_log_id,
-        candidate_employee_id: candidate.employee_id,
-        rank: candidate.rank,
-      },
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelected((prev) => {
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (!contacted.has(id)) next.add(id);
+      }
+      return next.size === prev.size ? prev : next;
     });
+  }, [notifications]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toggleSelect(employeeId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(employeeId)) next.delete(employeeId);
+      else next.add(employeeId);
+      return next;
+    });
+  }
+
+  function handleSendBatch(employeeIds: string[]) {
+    for (const empId of employeeIds) {
+      const c = candidatesByEmp.get(empId);
+      if (!c) continue;
+      sendMutation.mutate({
+        calloutId: result.callout_id,
+        req: {
+          recommendation_log_id: result.recommendation_log_id,
+          candidate_employee_id: c.employee_id,
+          rank: c.rank,
+        },
+      });
+    }
+    setSelected(new Set());
   }
 
   function handleRespond(
@@ -106,138 +137,244 @@ export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
     );
   }
 
-  return (
-    <Card>
-      <CardContent className="space-y-3 py-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Outreach console</h3>
-          <span className="text-xs text-muted-foreground">
-            {notifications.length} attempt(s)
-          </span>
-        </div>
+  const selectedCount = selected.size;
+  const remainingCount = uncontactedCandidates.length;
 
-        {pending ? (
-          <PendingOutreachRow
-            notificationId={pending.notification_id}
-            employeeId={pending.employee_id}
-            candidateName={
-              candidatesByEmp.get(pending.employee_id)?.name ?? pending.employee_id
-            }
-            rank={candidatesByEmp.get(pending.employee_id)?.rank}
-            disabled={respondMutation.isPending}
-            onRespond={handleRespond}
-            timeoutSeconds={outreachTimeoutSeconds}
-            timeoutLabel={outreachTimeoutLabel}
-          />
+  return (
+    <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="border-b bg-muted/40 px-5 py-4 flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Outreach Console</h3>
+        <span className="text-xs text-muted-foreground">
+          {notifications.length} attempt{notifications.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      <div className="p-5 space-y-5">
+        {/* Active outreach */}
+        {pendings.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Awaiting Response · {pendings.length}{" "}
+              {pendings.length === 1 ? "candidate" : "candidates"}
+            </p>
+            <p className="text-xs text-muted-foreground -mt-1">
+              First to accept takes the shift — the rest are auto-canceled.
+            </p>
+            {pendings.map((p) => (
+              <PendingOutreachRow
+                key={p.notification_id}
+                notificationId={p.notification_id}
+                employeeId={p.employee_id}
+                candidateName={
+                  candidatesByEmp.get(p.employee_id)?.name ?? p.employee_id
+                }
+                rank={candidatesByEmp.get(p.employee_id)?.rank}
+                disabled={respondMutation.isPending}
+                onRespond={handleRespond}
+              />
+            ))}
+          </div>
         ) : (
-          <div className="text-xs text-muted-foreground">
-            No active outreach. Use &quot;Send&quot; on a candidate below to start.
-            Timeout is{" "}
-            <span className="font-medium">{outreachTimeoutLabel}</span> — expired
-            candidates move to the bottom of the queue.
+          <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-4 text-xs text-muted-foreground">
+            No active outreach. Select candidates below, then send to selected
+            staff or everyone still available.
           </div>
         )}
 
+        {/* History */}
         {notifications.length > 0 && (
-          <div className="space-y-1">
-            <div className="text-xs font-semibold text-muted-foreground">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               History
-            </div>
-            {notifications.map((n) => {
-              const filledByOther =
-                n.status === "CANCELED" &&
-                (n.payload_text ?? "").toLowerCase().includes(
-                  FILLED_BY_OTHER_MARKER,
+            </p>
+            <div className="space-y-1.5">
+              {notifications.map((n) => {
+                const filledByOther =
+                  n.status === "CANCELED" &&
+                  (n.payload_text ?? "")
+                    .toLowerCase()
+                    .includes(FILLED_BY_OTHER_MARKER);
+                const style = filledByOther
+                  ? FILLED_STYLE
+                  : (STATUS_STYLE[n.status] ?? STATUS_STYLE.CANCELED);
+                const Icon = style.icon;
+                return (
+                  <div
+                    key={n.notification_id}
+                    className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-xs"
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {Icon && (
+                        <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-medium">
+                            {candidatesByEmp.get(n.employee_id)?.name ??
+                              n.employee_id}
+                          </span>
+                          {candidatesByEmp.get(n.employee_id) && (
+                            <span className="text-muted-foreground">
+                              #{candidatesByEmp.get(n.employee_id)!.rank}
+                            </span>
+                          )}
+                          <Badge
+                            variant="secondary"
+                            className={cn(
+                              "border text-[10px] px-1.5 py-0 h-4",
+                              style.className,
+                            )}
+                          >
+                            {style.label}
+                          </Badge>
+                        </div>
+                        {filledByOther && n.payload_text && (
+                          <div className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                            {n.payload_text}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {new Date(n.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
                 );
-              const badgeClass = filledByOther
-                ? FILLED_BADGE
-                : (STATUS_BADGE[n.status] ?? "bg-slate-100");
-              const badgeLabel = filledByOther ? "WE FOUND SOMEONE" : n.status;
-              return (
-                <div
-                  key={n.notification_id}
-                  className="flex items-start justify-between text-xs border rounded-md px-2 py-1 gap-2"
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Candidate queue */}
+        {orderedCandidates.length > 0 && (
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Queue
+              </p>
+              <div className="grid min-w-0 flex-1 grid-cols-2 gap-1.5 sm:flex sm:flex-none sm:items-center">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 min-w-0 px-2 text-[11px] gap-1"
+                  onClick={() => handleSendBatch(Array.from(selected))}
+                  disabled={
+                    sendMutation.isPending ||
+                    selectedCount === 0 ||
+                    remainingCount === 0
+                  }
                 >
-                  <div className="flex items-start gap-2 min-w-0">
-                    <Badge className={badgeClass}>{badgeLabel}</Badge>
-                    <div className="min-w-0">
-                      <div>
-                        {candidatesByEmp.get(n.employee_id)?.name ??
-                          n.employee_id}
-                        {candidatesByEmp.get(n.employee_id) && (
-                          <span className="text-muted-foreground ml-1">
-                            (#{candidatesByEmp.get(n.employee_id)!.rank})
+                  <Send className="h-3 w-3" />
+                  <span className="truncate">Send selected ({selectedCount})</span>
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 min-w-0 px-2 text-[11px] gap-1"
+                  onClick={() => setConfirmAllOpen(true)}
+                  disabled={sendMutation.isPending || remainingCount === 0}
+                  title="Send outreach to every uncontacted candidate at once"
+                >
+                  <Users className="h-3 w-3" />
+                  <span className="truncate">Send all ({remainingCount})</span>
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              {orderedCandidates.map((c) => {
+                const wasContacted = contacted.has(c.employee_id);
+                const isDeprioritized = deprioritized.has(c.employee_id);
+                const isSelected = selected.has(c.employee_id);
+                return (
+                  <label
+                    key={c.employee_id}
+                    className={cn(
+                      "flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2 text-xs transition-colors",
+                      wasContacted
+                        ? "bg-muted/30 cursor-default opacity-60"
+                        : isSelected
+                          ? "border-primary/30 bg-primary/5"
+                          : "hover:bg-muted/30",
+                      isDeprioritized && !wasContacted && "opacity-70",
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 shrink-0 accent-primary"
+                        checked={isSelected}
+                        disabled={wasContacted || sendMutation.isPending}
+                        onChange={() => toggleSelect(c.employee_id)}
+                        aria-label={`Select ${c.name}`}
+                      />
+                      <div className="min-w-0">
+                        <span className="font-medium">
+                          #{c.rank} {c.name}
+                        </span>
+                        <span className="ml-1.5 text-muted-foreground">
+                          {c.license}
+                        </span>
+                        {isDeprioritized && !wasContacted && (
+                          <span className="ml-2 text-[10px] text-amber-700 font-medium">
+                            Retry available
                           </span>
                         )}
                       </div>
-                      {filledByOther && n.payload_text && (
-                        <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                          {n.payload_text}
-                        </div>
-                      )}
                     </div>
-                  </div>
-                  <span className="text-muted-foreground shrink-0">
-                    {new Date(n.created_at).toLocaleTimeString()}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Candidate queue — ordered so deprioritized (greyed) sit at the bottom */}
-        {!pending && orderedCandidates.length > 0 && (
-          <div className="border-t pt-3 space-y-1">
-            <div className="text-xs font-semibold text-muted-foreground">
-              Candidate queue
-            </div>
-            {orderedCandidates.map((c) => {
-              const wasContacted = contacted.has(c.employee_id);
-              const isDeprioritized = deprioritized.has(c.employee_id);
-              return (
-                <div
-                  key={c.employee_id}
-                  className={cn(
-                    "flex items-center justify-between text-xs border rounded-md px-2 py-1",
-                    isDeprioritized && "opacity-60",
-                  )}
-                >
-                  <div className="min-w-0">
-                    <span className="font-medium">
-                      #{c.rank} {c.name}
-                    </span>
-                    <span className="text-muted-foreground ml-1">
-                      ({c.license})
-                    </span>
-                    {isDeprioritized && (
-                      <span className="ml-2 text-[10px] text-amber-800">
-                        Retry available
+                    {wasContacted && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        Contacted
                       </span>
                     )}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant={c === nextCandidate ? "default" : "outline"}
-                    className="h-6 px-2 text-[11px]"
-                    onClick={() => handleSend(c)}
-                    disabled={sendMutation.isPending || wasContacted}
-                  >
-                    {wasContacted ? "Contacted" : "Send"}
-                  </Button>
-                </div>
-              );
-            })}
+                  </label>
+                );
+              })}
+            </div>
           </div>
         )}
 
         {respondMutation.isError && (
-          <div className="text-xs text-destructive">
+          <div className="rounded-lg border border-destructive/50 bg-destructive/5 px-3 py-2 text-xs text-destructive">
             {(respondMutation.error as Error)?.message ?? "Response failed."}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+
+      <Dialog open={confirmAllOpen} onOpenChange={setConfirmAllOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Contact all {remainingCount} candidates?
+            </DialogTitle>
+            <DialogDescription>
+              This sends the outreach message to every uncontacted candidate at
+              once. Whoever accepts first takes the shift — the rest are
+              automatically canceled with a &ldquo;we found someone&rdquo;
+              notice. Use this when the fill is urgent.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmAllOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                handleSendBatch(
+                  uncontactedCandidates.map((c) => c.employee_id),
+                );
+                setConfirmAllOpen(false);
+              }}
+            >
+              Contact all {remainingCount}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
@@ -252,8 +389,6 @@ interface PendingOutreachRowProps {
     response: "ACCEPTED" | "DECLINED" | "TIMEOUT" | "SKIPPED",
     rank?: number,
   ) => void;
-  timeoutSeconds: number;
-  timeoutLabel: string;
 }
 
 function PendingOutreachRow({
@@ -263,72 +398,46 @@ function PendingOutreachRow({
   rank,
   disabled,
   onRespond,
-  timeoutSeconds,
-  timeoutLabel,
 }: PendingOutreachRowProps) {
-  const [remaining, setRemaining] = useState(timeoutSeconds);
-  const [fired, setFired] = useState(false);
-
-  useEffect(() => {
-    setRemaining(timeoutSeconds);
-    setFired(false);
-    const start = Date.now();
-    const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - start) / 1000);
-      const next = Math.max(0, timeoutSeconds - elapsed);
-      setRemaining(next);
-      if (next === 0) {
-        clearInterval(interval);
-      }
-    }, 250);
-    return () => clearInterval(interval);
-  }, [notificationId, timeoutSeconds]);
-
-  useEffect(() => {
-    if (remaining === 0 && !fired) {
-      setFired(true);
-      onRespond(notificationId, "TIMEOUT", rank);
-    }
-  }, [remaining, fired, notificationId, onRespond, rank]);
-
   return (
-    <div className="flex items-center justify-between border rounded-md px-3 py-2 bg-amber-50 border-amber-200">
-      <div className="text-sm">
-        Waiting on{" "}
-        <span className="font-medium">
-          {candidateName}
-          {rank && <span className="text-muted-foreground"> (#{rank})</span>}
-        </span>{" "}
-        <span className="text-xs text-muted-foreground">({employeeId})</span>
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
+      <div className="flex min-w-0 items-start gap-2.5">
+        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-800">
+          <Clock className="h-3.5 w-3.5" />
+        </div>
+        <div className="min-w-0 flex-1 text-sm leading-snug">
+          <div className="break-words font-medium">{candidateName}</div>
+          <div className="mt-0.5 flex flex-wrap gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+            {rank && <span>#{rank}</span>}
+            <span>{employeeId}</span>
+          </div>
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span
-          className="text-[11px] text-muted-foreground tabular-nums"
-          title={`Auto-timeout in ${timeoutLabel} (demo: ${remaining}s)`}
-        >
-          {remaining}s
-        </span>
+
+      <div className="mt-3 grid grid-cols-3 gap-1.5">
         <Button
           size="sm"
-          className="h-7 px-2 text-xs"
+          className="h-8 bg-emerald-600 px-2 text-xs gap-1 hover:bg-emerald-700"
           onClick={() => onRespond(notificationId, "ACCEPTED", rank)}
           disabled={disabled}
         >
+          <CheckCircle2 className="h-3 w-3" />
           Accept
         </Button>
         <Button
           size="sm"
           variant="outline"
-          className="h-7 px-2 text-xs text-red-700 border-red-200 hover:bg-red-50"
+          className="h-8 px-2 text-xs gap-1 border-red-200 text-red-700 hover:bg-red-50"
           onClick={() => onRespond(notificationId, "DECLINED", rank)}
           disabled={disabled}
         >
+          <XCircle className="h-3 w-3" />
           Decline
         </Button>
         <Button
           size="sm"
           variant="ghost"
-          className="h-7 px-2 text-xs"
+          className="h-8 px-2 text-xs"
           onClick={() => onRespond(notificationId, "SKIPPED", rank)}
           disabled={disabled}
         >

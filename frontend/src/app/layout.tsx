@@ -4,8 +4,7 @@ import "./globals.css";
 import { QueryProvider } from "@/providers/query-provider";
 import { WorkHoursProvider } from "@/providers/work-hours-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AppSidebar } from "@/components/app-sidebar";
-import { WorkHoursMonitor } from "@/components/work-hours-monitor";
+import { AppShell } from "@/components/app-shell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,13 +31,11 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex">
+      <body className="min-h-full">
         <QueryProvider>
           <WorkHoursProvider>
             <TooltipProvider>
-              <AppSidebar />
-              <main className="flex-1 p-6 overflow-auto">{children}</main>
-              <WorkHoursMonitor />
+              <AppShell>{children}</AppShell>
             </TooltipProvider>
           </WorkHoursProvider>
         </QueryProvider>

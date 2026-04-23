@@ -17,7 +17,7 @@ A coordinator opens the Schedule page and sees April's calendar at a glance. Eac
 - **Yellow** = unassigned slot, needs attention
 - **Red** = someone called out, needs immediate replacement
 
-In an ideal month with full staff (26 employees across RN, LPN, CNA, and PCT roles), the system fills all 1,080 shift slots automatically. The coordinator sees a wall of green — the schedule is done.
+In an ideal month with full staff (214 employees across RN, LPN, CNA, and PCT roles), the system can cover the current calendar demand without breaking the hard staffing rules. The coordinator sees a wall of green — the schedule is done.
 
 **What the system considers when assigning staff:**
 - **Licenses and certifications** — RNs and LPNs are placed in licensed slots; CNAs and PCTs in certified slots. An LPN is never assigned to an RN-only position.

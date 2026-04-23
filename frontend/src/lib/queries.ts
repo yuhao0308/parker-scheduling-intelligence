@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   autogenSubmit,
+  commitDecisions,
   generateSchedule,
   getAllActiveStaff,
   getDemoConfig,
@@ -17,6 +18,7 @@ import {
   listOutreach,
   regenerateWeek,
   removeEntry,
+  resetCalendar,
   replaceEntry,
   respondConfirmation,
   respondOutreach,
@@ -24,11 +26,13 @@ import {
   sendOutreach,
   submitCallout,
   submitOverride,
+  timeoutSweep,
   updateWeights,
 } from "./api";
 import type {
   AutogenSubmitRequest,
   CalloutRequest,
+  CommitDecisionsRequest,
   GenerateScheduleRequest,
   OverrideRequest,
   RegenerateWeekRequest,
@@ -38,6 +42,7 @@ import type {
   ScoringWeights,
   SendConfirmationsRequest,
   SendOutreachRequest,
+  TimeoutSweepRequest,
 } from "./types";
 
 export function useUnits() {
@@ -113,6 +118,21 @@ export function useUpdateWeights() {
   });
 }
 
+export function useResetCalendar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: resetCalendar,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
+      qc.invalidateQueries({ queryKey: ["confirmations"] });
+      qc.invalidateQueries({ queryKey: ["recentCallouts"] });
+      qc.invalidateQueries({ queryKey: ["outreach"] });
+      qc.invalidateQueries({ queryKey: ["calloutsByMonth"] });
+    },
+  });
+}
+
 export function useMonthlySchedule(year: number, month: number) {
   return useQuery({
     queryKey: ["monthlySchedule", year, month],
@@ -180,6 +200,17 @@ export function useRespondConfirmation(weekStart: string) {
   });
 }
 
+export function useCommitDecisions(weekStart: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CommitDecisionsRequest) => commitDecisions(req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
+      qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+    },
+  });
+}
+
 export function useReplaceEntry(weekStart: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -196,6 +227,17 @@ export function useRemoveEntry(weekStart: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (entryId: number) => removeEntry(entryId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
+      qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+    },
+  });
+}
+
+export function useTimeoutSweep(weekStart: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: TimeoutSweepRequest) => timeoutSweep(req),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });

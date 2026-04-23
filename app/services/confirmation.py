@@ -27,6 +27,8 @@ from app.models.unit import Unit
 from app.schemas.callout import CalloutRequest, CalloutResponse
 from app.schemas.common import ShiftLabel
 from app.schemas.confirmation import (
+    CommitDecision,
+    CommitDecisionsResult,
     ConfirmationEntryOut,
     ConfirmationListOut,
     ConfirmationResponse,
@@ -35,8 +37,10 @@ from app.schemas.confirmation import (
     RespondConfirmationResult,
     SendConfirmationsResult,
     StatusCounts,
+    TimeoutSweepResult,
 )
 from app.services.recommendation import generate_recommendations
+from app.services.scheduler import regenerate_week_schedule
 
 
 def _week_range(week_start: date) -> tuple[date, date]:
@@ -244,6 +248,119 @@ async def respond_to_confirmation(
     )
 
 
+async def commit_week_decisions(
+    db: AsyncSession,
+    week_start: date,
+    decisions: List[CommitDecision],
+    employee_pool: List[str],
+    settings: Settings,
+) -> CommitDecisionsResult:
+    """Bulk-commit scheduler review decisions for the Auto-Gen panel.
+
+    Checked entries are ACCEPTED, unchecked entries are DECLINED. Unlike the
+    single-entry respond flow, declines here do not synchronously generate
+    replacement recommendations; instead, the week is re-rolled once against
+    the remaining pool after all decisions are applied.
+    """
+    start, end = _week_range(week_start)
+    decision_map = {decision.entry_id: decision.keep for decision in decisions}
+
+    if not decision_map:
+        summary = await _status_counts(db, start, end, unit_ids=None)
+        return CommitDecisionsResult(
+            week_start=week_start,
+            accepted_count=0,
+            declined_count=0,
+            skipped_count=0,
+            declined_employee_ids=[],
+            summary=summary,
+        )
+
+    query = select(ScheduleEntry).where(
+        and_(
+            ScheduleEntry.id.in_(decision_map.keys()),
+            ScheduleEntry.shift_date >= start,
+            ScheduleEntry.shift_date <= end,
+        )
+    )
+    entries = list((await db.execute(query)).scalars().all())
+
+    accepted_count = 0
+    declined_count = 0
+    skipped_count = max(0, len(decision_map) - len(entries))
+    declined_employee_ids: set[str] = set()
+    now = datetime.now(timezone.utc)
+
+    for entry in entries:
+        if entry.confirmation_status != ConfirmationStatus.PENDING:
+            skipped_count += 1
+            continue
+
+        keep = decision_map.get(entry.id, True)
+        await _mark_latest_notification(
+            db,
+            entry.id,
+            NotificationKind.CONFIRM_SHIFT,
+            status=NotificationStatus.ACCEPTED if keep else NotificationStatus.DECLINED,
+            responded_at=now,
+        )
+
+        entry.confirmation_status = (
+            ConfirmationStatus.ACCEPTED if keep else ConfirmationStatus.DECLINED
+        )
+        entry.confirmation_responded_at = now
+
+        if keep:
+            accepted_count += 1
+        else:
+            declined_count += 1
+            declined_employee_ids.add(entry.employee_id)
+
+    reroll_entries_generated = 0
+    reroll_notifications_sent = 0
+    unfilled_slots = 0
+    warnings: list[str] = []
+
+    if declined_employee_ids:
+        await db.flush()
+        reroll_pool = [
+            employee_id
+            for employee_id in employee_pool
+            if employee_id not in declined_employee_ids
+        ]
+        if reroll_pool:
+            regen = await regenerate_week_schedule(
+                week_start=week_start,
+                employee_pool=reroll_pool,
+                db=db,
+                settings=settings,
+                preserve_responded=True,
+            )
+            sent = await send_week_confirmations(db, week_start, unit_ids=None)
+            reroll_entries_generated = regen.entries_created
+            reroll_notifications_sent = sent.notifications_created
+            unfilled_slots = regen.unfilled_slots
+            warnings = regen.warnings
+        else:
+            await db.commit()
+    else:
+        await db.commit()
+
+    summary = await _status_counts(db, start, end, unit_ids=None)
+    return CommitDecisionsResult(
+        week_start=week_start,
+        accepted_count=accepted_count,
+        declined_count=declined_count,
+        skipped_count=skipped_count,
+        declined_employee_ids=sorted(declined_employee_ids),
+        reroll_entries_generated=reroll_entries_generated,
+        reroll_notifications_sent=reroll_notifications_sent,
+        unfilled_slots=unfilled_slots,
+        warnings=warnings[:50],
+        summary=summary,
+    )
+
+
 async def replace_declined_entry(
     db: AsyncSession,
     entry_id: int,
@@ -363,6 +480,58 @@ async def remove_entry(
         new_status=ConfirmationStatus.REPLACED.value,
         slot_now_open=True,
         canceled_notification_id=canceled_notif_id,
+    )
+
+
+async def timeout_sweep_entries(
+    db: AsyncSession,
+    entry_ids: List[int],
+) -> TimeoutSweepResult:
+    """Bulk-transition PENDING entries to DECLINED as expired.
+
+    Unlike single-entry TIMEOUT via respond_to_confirmation, this does NOT
+    generate recommendation payloads synchronously — that would be O(N) LLM
+    calls. The supervisor resolves timed-out rows one at a time from the UI
+    (Remove from pool, or manually re-trigger replacement).
+
+    Non-PENDING entries are reported in `skipped` instead of raising; the
+    sweep is a best-effort bulk call where races with manual Accept/Decline
+    are expected.
+    """
+    now = datetime.now(timezone.utc)
+    processed: list[int] = []
+    skipped: list[int] = []
+
+    for entry_id in entry_ids:
+        entry = await db.get(ScheduleEntry, entry_id)
+        if not entry or entry.confirmation_status != ConfirmationStatus.PENDING:
+            skipped.append(entry_id)
+            continue
+
+        await _mark_latest_notification(
+            db,
+            entry_id,
+            NotificationKind.CONFIRM_SHIFT,
+            status=NotificationStatus.TIMEOUT,
+            responded_at=now,
+        )
+        entry.confirmation_status = ConfirmationStatus.DECLINED
+        entry.confirmation_responded_at = now
+        db.add(
+            Callout(
+                employee_id=entry.employee_id,
+                unit_id=entry.unit_id,
+                shift_date=entry.shift_date,
+                shift_label=entry.shift_label,
+                reason="schedule_decline:timeout",
+                reported_at=now,
+            )
+        )
+        processed.append(entry_id)
+
+    await db.commit()
+    return TimeoutSweepResult(
+        processed=processed, skipped=skipped, processed_at=now
     )
 
 

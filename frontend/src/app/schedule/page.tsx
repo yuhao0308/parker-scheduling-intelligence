@@ -15,17 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { MonthCalendar, type StatusFilter } from "@/components/month-calendar";
 import { ShiftDetailDialog } from "@/components/shift-detail-dialog";
 import { OperatorPanel } from "@/components/schedule/operator-panel";
-import { ReplacementDialog } from "@/components/schedule/replacement-dialog";
 import {
   useGenerateSchedule,
   useMonthlySchedule,
   useUnits,
 } from "@/lib/queries";
-import type {
-  CalloutResponse,
-  ConfirmationEntry,
-  ShiftSlot,
-} from "@/lib/types";
+import type { ShiftSlot } from "@/lib/types";
 import { useWorkHoursMonitor } from "@/providers/work-hours-provider";
 
 function defaultWeekStart(today = new Date()): string {
@@ -43,7 +38,7 @@ const MONTH_NAMES = [
 ];
 
 const SCENARIOS = [
-  { label: "Full Staff (26)", value: undefined },
+  { label: "Full Staff (214)", value: undefined },
   { label: "Moderate (20)", value: 20 },
   { label: "Critical (15)", value: 15 },
 ];
@@ -56,10 +51,6 @@ export default function SchedulePage() {
   const [generateOpen, setGenerateOpen] = useState(false);
   const [scenarioIdx, setScenarioIdx] = useState(0);
   const [weekStart, setWeekStart] = useState(() => defaultWeekStart());
-  const [replacementEntry, setReplacementEntry] =
-    useState<ConfirmationEntry | null>(null);
-  const [replacementData, setReplacementData] =
-    useState<CalloutResponse | null>(null);
   const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const { setScope } = useWorkHoursMonitor();
@@ -241,10 +232,6 @@ export default function SchedulePage() {
             month={month}
             weekStart={weekStart}
             onWeekStartChange={setWeekStart}
-            onDeclineReplacement={(entry, replacement) => {
-              setReplacementEntry(entry);
-              setReplacementData(replacement);
-            }}
           />
         </div>
       </div>
@@ -254,24 +241,6 @@ export default function SchedulePage() {
         slot={activeSlot}
         open={detailOpen}
         onOpenChange={setDetailOpen}
-      />
-
-      {/* Replacement dialog */}
-      <ReplacementDialog
-        open={!!replacementEntry && !!replacementData}
-        onOpenChange={(o) => {
-          if (!o) {
-            setReplacementEntry(null);
-            setReplacementData(null);
-          }
-        }}
-        entry={replacementEntry}
-        replacement={replacementData}
-        weekStart={weekStart}
-        onReplaced={() => {
-          setReplacementEntry(null);
-          setReplacementData(null);
-        }}
       />
 
       {/* Generate schedule dialog */}

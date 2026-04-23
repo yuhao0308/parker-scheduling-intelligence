@@ -4,22 +4,14 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { AutoGenTab } from "@/components/schedule/auto-gen-tab";
 import { CalloutTab } from "@/components/schedule/callout-tab";
-import type { CalloutResponse, ConfirmationEntry } from "@/lib/types";
 
 type PanelMode = "autogen" | "callout";
 
 interface OperatorPanelProps {
-  /** Currently displayed month (drives callout rollup feed) */
   year: number;
   month: number;
-  /** Controlled week picker for the Auto-Gen tab */
   weekStart: string;
   onWeekStartChange: (value: string) => void;
-  /** Forwarded from Auto-Gen tab when a DECLINED entry fires the one-click replacement path */
-  onDeclineReplacement: (
-    entry: ConfirmationEntry,
-    replacement: CalloutResponse,
-  ) => void;
 }
 
 /**
@@ -34,7 +26,6 @@ export function OperatorPanel({
   month,
   weekStart,
   onWeekStartChange,
-  onDeclineReplacement,
 }: OperatorPanelProps) {
   const [mode, setMode] = useState<PanelMode>("autogen");
 
@@ -62,7 +53,6 @@ export function OperatorPanel({
           <AutoGenTab
             weekStart={weekStart}
             onWeekStartChange={onWeekStartChange}
-            onDeclineReplacement={onDeclineReplacement}
           />
         ) : (
           <CalloutTab year={year} month={month} />

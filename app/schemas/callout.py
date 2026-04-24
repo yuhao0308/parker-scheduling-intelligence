@@ -144,3 +144,36 @@ class CalloutDayCount(BaseModel):
     date: date
     total: int
     active: int  # callouts without an accepted replacement entry yet
+
+
+class CalloutJobStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class CalloutJobResponse(BaseModel):
+    """Resumable view of a callout's recommendation pipeline.
+
+    POST /callouts returns this immediately after creating the row and
+    spawning the background task. GET /callouts/{callout_id} returns the
+    same shape so the UI can poll until ``status`` is COMPLETED or FAILED
+    and then render the candidates.
+    """
+
+    callout_id: int
+    status: CalloutJobStatus
+    unit_id: str
+    unit_name: str
+    shift_date: date
+    shift_label: ShiftLabel
+    called_out_employee: CalledOutEmployee
+    reported_at: datetime
+    # Populated only when status == COMPLETED.
+    recommendation_log_id: Optional[int] = None
+    candidates: Optional[List[ScoredCandidate]] = None
+    filter_stats: Optional[FilterStats] = None
+    generated_at: Optional[datetime] = None
+    # Populated only when status == FAILED.
+    error_message: Optional[str] = None

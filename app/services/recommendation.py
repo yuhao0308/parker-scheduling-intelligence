@@ -80,7 +80,7 @@ async def generate_recommendations(
         raise UnitNotFoundError(callout.unit_id)
 
     target_typology = UnitTypology(unit.typology.value)
-    called_out_employee = await _load_called_out_employee(
+    called_out_employee = await load_called_out_employee(
         callout.callout_employee_id, db
     )
     required_license = called_out_employee.license
@@ -325,7 +325,7 @@ async def generate_recommendations(
 # --- Helper functions ---
 
 
-async def _load_called_out_employee(
+async def load_called_out_employee(
     callout_employee_id: str, db: AsyncSession
 ) -> CalledOutEmployee:
     """Load profile details for the employee who called out.

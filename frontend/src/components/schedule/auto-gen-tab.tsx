@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   Search,
-  Send,
   Sparkles,
   X,
   XCircle,
@@ -56,6 +55,16 @@ interface EmployeeMembership {
 }
 
 type RowError = { message: string; retry: () => void };
+type StopNotice = {
+  count: number;
+  warnings: string[];
+  message: string;
+  source: "finalize" | "generate";
+};
+
+function poolKey(ids: Iterable<string>): string {
+  return Array.from(ids).sort().join("|");
+}
 
 export function AutoGenTab({
   weekStart,
@@ -91,6 +100,8 @@ export function AutoGenTab({
   const seenIntentIdsRef = useRef<Set<number>>(new Set());
   const [isCommitting, setIsCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
+  const [stopNotice, setStopNotice] = useState<StopNotice | null>(null);
+  const [blockedPoolKey, setBlockedPoolKey] = useState<string | null>(null);
 
   const derivedPool = useMemo(() => {
     if (manualPool) return manualPool;
@@ -101,6 +112,7 @@ export function AutoGenTab({
     return seeded;
   }, [manualPool, confirmations]);
   const pool = derivedPool;
+  const currentPoolKey = useMemo(() => poolKey(pool), [pool]);
   const setPool = (updater: (prev: Set<string>) => Set<string>) => {
     setManualPool((prev) => updater(prev ?? derivedPool));
   };
@@ -184,11 +196,34 @@ export function AutoGenTab({
   }
 
   function handleSubmit() {
-    autogenMutation.mutate({
-      week_start: weekStart,
-      employee_pool: Array.from(pool),
-      preserve_pending: true,
-    });
+    autogenMutation.mutate(
+      {
+        week_start: weekStart,
+        employee_pool: Array.from(pool),
+        preserve_pending: true,
+      },
+      {
+        onSuccess: (result) => {
+          if (result.candidate_exhausted && result.unfilled_slots > 0) {
+            const message =
+              result.stop_message ??
+              "No available candidates remain. Please review the staffing pool or scheduling conditions.";
+            setStopNotice({
+              count: result.unfilled_slots,
+              warnings: result.warnings,
+              message,
+              source: "generate",
+            });
+            if (result.entries_generated === 0) {
+              setBlockedPoolKey(currentPoolKey);
+            }
+          } else {
+            setStopNotice(null);
+            setBlockedPoolKey(null);
+          }
+        },
+      },
+    );
   }
 
   function setIntent(entryId: number, keep: boolean) {
@@ -219,9 +254,11 @@ export function AutoGenTab({
         })),
       });
 
+      let poolAfterCommit = new Set(pool);
       if (result.declined_employee_ids.length > 0) {
         const reducedPool = new Set(pool);
         for (const id of result.declined_employee_ids) reducedPool.delete(id);
+        poolAfterCommit = reducedPool;
         setManualPool(reducedPool);
       }
 
@@ -229,6 +266,24 @@ export function AutoGenTab({
         setCommitError(
           `${result.skipped_count} shifts changed before commit and were skipped. Refresh and review again if needed.`,
         );
+      }
+
+      if (result.candidate_exhausted && result.unfilled_slots > 0) {
+        const message =
+          result.stop_message ??
+          "No available candidates remain. Please review the staffing pool or scheduling conditions.";
+        setStopNotice({
+          count: result.unfilled_slots,
+          warnings: result.warnings,
+          message,
+          source: "finalize",
+        });
+        if (result.reroll_entries_generated === 0) {
+          setBlockedPoolKey(poolKey(poolAfterCommit));
+        }
+      } else if (result.declined_count > 0) {
+        setStopNotice(null);
+        setBlockedPoolKey(null);
       }
     } catch (error) {
       setCommitError(
@@ -290,7 +345,9 @@ export function AutoGenTab({
   }
 
   const summary = confirmations?.summary;
-  const submitDisabled = autogenMutation.isPending || pool.size === 0;
+  const isPoolBlocked = blockedPoolKey === currentPoolKey;
+  const submitDisabled =
+    autogenMutation.isPending || pool.size === 0 || isPoolBlocked;
   const pendingCount = summary?.pending ?? 0;
   const acceptedCount = summary?.accepted ?? 0;
   const commitDisabled =
@@ -334,7 +391,6 @@ export function AutoGenTab({
     return { keep, remove };
   }, [confirmations, intents]);
 
-  const totalAssigned = acceptedCount + pendingCount;
   const fillPercent =
     peopleSlots > 0
       ? Math.min(100, Math.round((acceptedCount / peopleSlots) * 100))
@@ -390,8 +446,18 @@ export function AutoGenTab({
         />
       )}
 
+      {stopNotice && (
+        <StopConditionCallout
+          count={stopNotice.count}
+          warnings={stopNotice.warnings}
+          message={stopNotice.message}
+          source={stopNotice.source}
+        />
+      )}
+
       {/* Unfilled warning — only after a submit that couldn't fill everything */}
-      {autogenMutation.isSuccess &&
+      {!stopNotice &&
+        autogenMutation.isSuccess &&
         autogenMutation.data &&
         autogenMutation.data.unfilled_slots > 0 && (
           <UnfilledCallout
@@ -538,6 +604,10 @@ export function AutoGenTab({
               {pendingCount} pending{" "}
               {pendingCount === 1 ? "reply" : "replies"} won&apos;t be re-sent
             </span>
+          ) : isPoolBlocked ? (
+            <span className="text-red-700">
+              No available candidates remain for this pool
+            </span>
           ) : pool.size === 0 ? (
             "Add staff to pool to enable sending"
           ) : (
@@ -548,6 +618,11 @@ export function AutoGenTab({
           size="sm"
           onClick={handleSubmit}
           disabled={submitDisabled}
+          title={
+            isPoolBlocked
+              ? "Review the staffing pool or scheduling conditions before generating again."
+              : undefined
+          }
           className="gap-1.5 h-8"
           aria-label="Send invites to newly added pool members"
         >
@@ -759,6 +834,64 @@ function ReviewBanner({
 }
 
 /* ── Unfilled callout ────────────────────────────────────────────────── */
+
+interface StopConditionCalloutProps {
+  count: number;
+  warnings: string[];
+  message: string;
+  source: "finalize" | "generate";
+}
+
+function StopConditionCallout({
+  count,
+  warnings,
+  message,
+  source,
+}: StopConditionCalloutProps) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      className="rounded-lg border border-red-300 bg-red-50/90 p-3 space-y-2 shadow-sm"
+      role="alert"
+    >
+      <div className="flex items-start gap-2.5">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700">
+          <AlertTriangle className="h-4 w-4" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-red-950">
+            Stop condition reached
+          </div>
+          <p className="text-[11px] text-red-900/80 leading-snug">
+            {message}
+          </p>
+          <p className="mt-1 text-[11px] text-red-900/65 leading-snug">
+            {count} unfilled slot{count === 1 ? "" : "s"} remain after{" "}
+            {source === "finalize" ? "finalizing" : "generation"}.
+          </p>
+        </div>
+        {warnings.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="text-[11px] text-red-900/80 underline hover:text-red-950 shrink-0"
+          >
+            {open ? "Hide" : "Details"}
+          </button>
+        )}
+      </div>
+      {open && warnings.length > 0 && (
+        <ul className="mt-1 pl-10 list-disc space-y-0.5 text-[11px] text-red-900/80 max-h-32 overflow-y-auto">
+          {warnings.map((w, i) => (
+            <li key={i} className="tabular-nums">
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 interface UnfilledCalloutProps {
   count: number;

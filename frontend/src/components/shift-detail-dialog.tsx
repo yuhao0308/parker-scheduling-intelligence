@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,8 +12,43 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CandidateList } from "./candidate-list";
 import { OverrideDialog } from "./override-dialog";
-import { useSubmitCallout, useSubmitOverride } from "@/lib/queries";
-import type { CalloutResponse, ShiftSlot, ScoredCandidate, ShiftSlotStatus } from "@/lib/types";
+import {
+  useCalloutJob,
+  useSubmitCallout,
+  useSubmitOverride,
+} from "@/lib/queries";
+import { Loader2 } from "lucide-react";
+import type {
+  CalloutJobResponse,
+  CalloutResponse,
+  ShiftSlot,
+  ScoredCandidate,
+  ShiftSlotStatus,
+} from "@/lib/types";
+
+function jobToResult(job: CalloutJobResponse | undefined): CalloutResponse | null {
+  if (
+    !job ||
+    job.status !== "COMPLETED" ||
+    job.recommendation_log_id === null ||
+    job.candidates === null ||
+    job.filter_stats === null
+  ) {
+    return null;
+  }
+  return {
+    callout_id: job.callout_id,
+    recommendation_log_id: job.recommendation_log_id,
+    unit_id: job.unit_id,
+    unit_name: job.unit_name,
+    shift_date: job.shift_date,
+    shift_label: job.shift_label,
+    called_out_employee: job.called_out_employee,
+    candidates: job.candidates,
+    filter_stats: job.filter_stats,
+    generated_at: job.generated_at ?? job.reported_at,
+  };
+}
 
 interface ShiftDetailDialogProps {
   slots: ShiftSlot[];
@@ -32,17 +67,24 @@ export function ShiftDetailDialog({
   open,
   onOpenChange,
 }: ShiftDetailDialogProps) {
-  const [result, setResult] = useState<CalloutResponse | null>(null);
+  const [calloutId, setCalloutId] = useState<number | null>(null);
   const [overrideCandidate, setOverrideCandidate] = useState<ScoredCandidate | null>(null);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   const calloutMutation = useSubmitCallout();
   const overrideMutation = useSubmitOverride();
+  const jobQuery = useCalloutJob(calloutId);
+
+  const job = jobQuery.data;
+  const result = useMemo<CalloutResponse | null>(() => jobToResult(job), [job]);
+  const isFinding =
+    calloutMutation.isPending ||
+    (job?.status === "PENDING" || job?.status === "RUNNING");
 
   function handleClose(val: boolean) {
     if (!val) {
-      setResult(null);
+      setCalloutId(null);
       setSubmitted(false);
       setOverrideCandidate(null);
       calloutMutation.reset();
@@ -66,7 +108,7 @@ export function ShiftDetailDialog({
         shift_date: slot.shift_date,
         shift_label: slot.shift_label,
       },
-      { onSuccess: (data) => setResult(data) },
+      { onSuccess: (data) => setCalloutId(data.callout_id) },
     );
   }
 
@@ -198,6 +240,22 @@ export function ShiftDetailDialog({
                 disabled={overrideMutation.isPending}
               />
             </div>
+          ) : isFinding ? (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">
+                Finding replacements…
+              </p>
+            </div>
+          ) : job && job.status === "FAILED" ? (
+            <div className="flex flex-col items-center gap-3 py-4">
+              <p className="text-sm text-destructive">
+                {job.error_message ?? "Recommendation failed."}
+              </p>
+              <Button variant="outline" onClick={handleGetRecommendations}>
+                Try Again
+              </Button>
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-3 py-4">
               {!isMulti && first.status === "unassigned" && (
@@ -205,9 +263,7 @@ export function ShiftDetailDialog({
                   onClick={handleGetRecommendations}
                   disabled={calloutMutation.isPending}
                 >
-                  {calloutMutation.isPending
-                    ? "Finding replacements..."
-                    : "Get Replacement Recommendations"}
+                  Get Replacement Recommendations
                 </Button>
               )}
               {isMulti && (

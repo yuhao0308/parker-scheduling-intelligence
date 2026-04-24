@@ -71,6 +71,27 @@ export interface CalloutResponse {
   generated_at: string;
 }
 
+// Resumable view of a callout's recommendation pipeline. POST /callouts
+// returns this immediately; the frontend polls GET /callouts/{id} until
+// status flips to COMPLETED or FAILED.
+export type CalloutJobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+
+export interface CalloutJobResponse {
+  callout_id: number;
+  status: CalloutJobStatus;
+  unit_id: string;
+  unit_name: string;
+  shift_date: string;
+  shift_label: ShiftLabel;
+  called_out_employee: CalledOutEmployee;
+  reported_at: string;
+  recommendation_log_id: number | null;
+  candidates: ScoredCandidate[] | null;
+  filter_stats: FilterStats | null;
+  generated_at: string | null;
+  error_message: string | null;
+}
+
 export interface OverrideRequest {
   recommendation_log_id: number;
   selected_employee_id: string;
@@ -233,6 +254,8 @@ export interface RegenerateWeekResult {
   entries_generated: number;
   slots_frozen: number;
   warnings: string[];
+  candidate_exhausted: boolean;
+  stop_message: string | null;
 }
 
 export interface AutogenSubmitRequest {
@@ -248,6 +271,8 @@ export interface AutogenSubmitResult {
   notifications_sent: number;
   unfilled_slots: number;
   warnings: string[];
+  candidate_exhausted: boolean;
+  stop_message: string | null;
 }
 
 export interface DemoConfig {
@@ -334,6 +359,8 @@ export interface CommitDecisionsResult {
   reroll_notifications_sent: number;
   unfilled_slots: number;
   warnings: string[];
+  candidate_exhausted: boolean;
+  stop_message: string | null;
   summary: StatusCounts;
 }
 

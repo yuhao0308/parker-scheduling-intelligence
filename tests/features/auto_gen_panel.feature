@@ -283,7 +283,22 @@ Feature: Auto Gen right-panel workflow
       # when a websocket push / refetch arrives.
 
   # --------------------------------------------------------------------
-  # Rule 9 — Accessibility / safety invariants
+  # Rule 9 — Finalize stop condition
+  # --------------------------------------------------------------------
+  Rule: Finalize warns when no available candidates remain
+
+    Scenario: Declines exhaust the remaining staffing pool
+      Given 1 PENDING entry remains for this week
+      And that employee is the only person left in the pool
+      When I reopen that entry and click Finalize
+      Then the backend returns candidate_exhausted = true
+      And the panel shows "Stop condition reached"
+      And the warning says "No available candidates remain"
+      And the warning says "Please review the staffing pool or scheduling conditions"
+      And Generate is disabled until the pool changes
+
+  # --------------------------------------------------------------------
+  # Rule 10 — Accessibility / safety invariants
   # --------------------------------------------------------------------
   Rule: The panel must be safe to click through quickly
 

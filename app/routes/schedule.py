@@ -267,6 +267,8 @@ async def autogen_submit(
         notifications_sent=sent.notifications_created,
         unfilled_slots=regen.unfilled_slots,
         warnings=regen.warnings,
+        candidate_exhausted=regen.candidate_exhausted,
+        stop_message=regen.stop_message,
     )
 
 

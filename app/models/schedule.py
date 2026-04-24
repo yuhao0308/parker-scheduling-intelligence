@@ -19,6 +19,20 @@ class ConfirmationStatus(str, enum.Enum):
     REPLACED = "REPLACED"
 
 
+class CalloutStatus(str, enum.Enum):
+    """Lifecycle of the recommendation pipeline for a single callout.
+
+    The pipeline runs as a background asyncio task so the POST returns
+    immediately and the frontend can resume by callout_id after navigating
+    away.
+    """
+
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class ScheduleEntry(TimestampMixin, Base):
     __tablename__ = "schedule_entry"
 
@@ -56,6 +70,16 @@ class Callout(TimestampMixin, Base):
     shift_label: Mapped[ShiftLabel] = mapped_column(Enum(ShiftLabel))
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[CalloutStatus] = mapped_column(
+        Enum(CalloutStatus, name="callout_status"),
+        default=CalloutStatus.PENDING,
+        server_default=CalloutStatus.PENDING.value,
+        nullable=False,
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
 class PTOEntry(Base):

@@ -1,23 +1,33 @@
 from __future__ import annotations
 
+import asyncio
 import calendar as _calendar
 from datetime import date, datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, Depends, Query
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, settings
+from app.db import session as db_session
 from app.db.session import get_db
 from app.models.notification import (
     NotificationKind,
     NotificationStatus,
     SimulatedNotification,
 )
-from app.models.schedule import Callout
-from app.models.staff import StaffMaster
-from app.schemas.callout import CalloutDayCount, CalloutRequest, CalloutResponse
+from app.models.recommendation import RecommendationLog
+from app.models.schedule import Callout, CalloutStatus
+from app.models.unit import Unit
+from app.schemas.callout import (
+    CalloutDayCount,
+    CalloutJobResponse,
+    CalloutJobStatus,
+    CalloutRequest,
+)
+from app.schemas.candidate import FilterStats, ScoredCandidate
 from app.schemas.outreach import (
     OutreachNotificationOut,
     RespondOutreachRequest,
@@ -26,48 +36,152 @@ from app.schemas.outreach import (
     SendOutreachResult,
 )
 from app.services.outreach import respond_to_outreach, send_outreach
-from app.services.recommendation import generate_recommendations
+from app.services.recommendation import (
+    generate_recommendations,
+    load_called_out_employee,
+)
+
+logger = structlog.get_logger()
 
 router = APIRouter(tags=["callout"])
 
 DEMO_COORDINATOR_ID = "demo-scheduler"
 
+# Hold strong references to fire-and-forget background tasks so the GC
+# can't collect them mid-flight (asyncio docs explicitly warn about this).
+_background_jobs: set[asyncio.Task] = set()
+
+
+async def _run_recommendation_job(
+    callout_id: int,
+    request: CalloutRequest,
+    job_settings: Settings,
+) -> None:
+    """Run the recommendation pipeline in its own session.
+
+    Spawned via ``asyncio.create_task`` from POST /callouts so the request
+    handler can return immediately. Persists the candidates via the existing
+    RecommendationLog row that ``generate_recommendations`` writes, and
+    flips the Callout's ``status`` field to COMPLETED or FAILED.
+    """
+    async with db_session.async_session_factory() as db:
+        try:
+            await generate_recommendations(
+                callout=request,
+                callout_id=callout_id,
+                db=db,
+                settings=job_settings,
+            )
+            callout = await db.get(Callout, callout_id)
+            if callout is not None:
+                callout.status = CalloutStatus.COMPLETED
+                callout.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+            logger.info("recommendation_job_complete", callout_id=callout_id)
+        except Exception as exc:  # noqa: BLE001 — record any pipeline failure
+            await db.rollback()
+            logger.exception(
+                "recommendation_job_failed",
+                callout_id=callout_id,
+                error=str(exc),
+            )
+            # Use a fresh session — the rolled-back one may be in a bad state.
+            async with db_session.async_session_factory() as fail_db:
+                callout = await fail_db.get(Callout, callout_id)
+                if callout is not None:
+                    callout.status = CalloutStatus.FAILED
+                    callout.completed_at = datetime.now(timezone.utc)
+                    callout.error_message = str(exc) or exc.__class__.__name__
+                    await fail_db.commit()
+
+
+async def _build_job_response(
+    callout: Callout, db: AsyncSession
+) -> CalloutJobResponse:
+    """Assemble the resumable view of a callout from the persisted state."""
+    unit = await db.get(Unit, callout.unit_id)
+    unit_name = unit.name if unit else callout.unit_id
+    called_out = await load_called_out_employee(callout.employee_id, db)
+
+    base = CalloutJobResponse(
+        callout_id=callout.id,
+        status=CalloutJobStatus(callout.status.value),
+        unit_id=callout.unit_id,
+        unit_name=unit_name,
+        shift_date=callout.shift_date,
+        shift_label=callout.shift_label,
+        called_out_employee=called_out,
+        reported_at=callout.reported_at,
+        error_message=callout.error_message,
+    )
+
+    if callout.status != CalloutStatus.COMPLETED:
+        return base
+
+    # Latest recommendation log for this callout — the pipeline writes one
+    # per run; ordering by id desc covers any future retry semantics.
+    rec_log = (
+        await db.execute(
+            select(RecommendationLog)
+            .where(RecommendationLog.callout_id == callout.id)
+            .order_by(RecommendationLog.id.desc())
+        )
+    ).scalars().first()
+
+    if rec_log is None:
+        # Status says completed but no log — surface as failure to avoid a
+        # stuck spinner on the client.
+        base.status = CalloutJobStatus.FAILED
+        base.error_message = "Recommendation result missing"
+        return base
+
+    candidates = [ScoredCandidate.model_validate(c) for c in rec_log.ranked_candidates]
+    filter_stats = FilterStats.model_validate(rec_log.filter_stats)
+
+    return base.model_copy(
+        update={
+            "recommendation_log_id": rec_log.id,
+            "candidates": candidates,
+            "filter_stats": filter_stats,
+            "generated_at": rec_log.request_timestamp,
+        }
+    )
+
 
 @router.post(
     "/callouts",
-    response_model=CalloutResponse,
-    summary="Report a callout and rank replacement candidates",
+    response_model=CalloutJobResponse,
+    summary="Report a callout and start the recommendation pipeline",
     description=(
-        "Creates a callout record, runs the recommendation pipeline, and returns "
-        "ranked candidates with scoring details and filter statistics."
+        "Creates a callout record, kicks off the recommendation pipeline as "
+        "a background task, and returns the job descriptor immediately. "
+        "Poll GET /callouts/{callout_id} for status and final candidates."
     ),
 )
 async def create_callout(
     request: CalloutRequest,
     db: AsyncSession = Depends(get_db),
-) -> CalloutResponse:
-    """Report a call-out and get ranked replacement candidates."""
-    # Create the callout record
+) -> CalloutJobResponse:
     callout = Callout(
         employee_id=request.callout_employee_id,
         unit_id=request.unit_id,
         shift_date=request.shift_date,
         shift_label=request.shift_label,
         reported_at=datetime.now(timezone.utc),
+        status=CalloutStatus.RUNNING,
     )
     db.add(callout)
-    await db.flush()  # get the callout ID
-
-    # Run the recommendation pipeline
-    response = await generate_recommendations(
-        callout=request,
-        callout_id=callout.id,
-        db=db,
-        settings=settings,
-    )
-
     await db.commit()
-    return response
+    await db.refresh(callout)
+
+    # Fire-and-forget — the task opens its own session and updates the row.
+    task = asyncio.create_task(
+        _run_recommendation_job(callout.id, request, settings)
+    )
+    _background_jobs.add(task)
+    task.add_done_callback(_background_jobs.discard)
+
+    return await _build_job_response(callout, db)
 
 
 @router.get(
@@ -129,6 +243,21 @@ async def list_callouts_by_month(
         CalloutDayCount(date=d, total=t, active=a)
         for d, (t, a) in sorted(rollup.items())
     ]
+
+
+@router.get(
+    "/callouts/{callout_id}",
+    response_model=CalloutJobResponse,
+    summary="Fetch the current status and (if ready) candidates for a callout",
+)
+async def get_callout(
+    callout_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> CalloutJobResponse:
+    callout = await db.get(Callout, callout_id)
+    if callout is None:
+        raise HTTPException(status_code=404, detail="Callout not found")
+    return await _build_job_response(callout, db)
 
 
 @router.post(

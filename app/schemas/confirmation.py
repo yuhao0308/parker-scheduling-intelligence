@@ -87,6 +87,8 @@ class CommitDecisionsResult(BaseModel):
     reroll_notifications_sent: int = 0
     unfilled_slots: int = 0
     warnings: List[str] = []
+    candidate_exhausted: bool = False
+    stop_message: Optional[str] = None
     summary: StatusCounts
 
 

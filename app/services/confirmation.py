@@ -21,7 +21,7 @@ from app.models.notification import (
     SimulatedNotification,
 )
 from app.models.recommendation import OverrideLog
-from app.models.schedule import Callout, ConfirmationStatus, ScheduleEntry
+from app.models.schedule import Callout, CalloutStatus, ConfirmationStatus, ScheduleEntry
 from app.models.staff import StaffMaster
 from app.models.unit import Unit
 from app.schemas.callout import CalloutRequest, CalloutResponse
@@ -40,7 +40,10 @@ from app.schemas.confirmation import (
     TimeoutSweepResult,
 )
 from app.services.recommendation import generate_recommendations
-from app.services.scheduler import regenerate_week_schedule
+from app.services.scheduler import (
+    NO_AVAILABLE_CANDIDATES_MESSAGE,
+    regenerate_week_schedule,
+)
 
 
 def _week_range(week_start: date) -> tuple[date, date]:
@@ -223,6 +226,7 @@ async def respond_to_confirmation(
         shift_label=entry.shift_label,
         reason=f"schedule_decline:{response.value.lower()}",
         reported_at=now,
+        status=CalloutStatus.RUNNING,
     )
     db.add(callout)
     await db.flush()
@@ -239,6 +243,10 @@ async def respond_to_confirmation(
         db=db,
         settings=settings,
     )
+    # Synchronous path — flip the lifecycle in the same transaction so the
+    # row is never observed in RUNNING state by the resumable poller.
+    callout.status = CalloutStatus.COMPLETED
+    callout.completed_at = datetime.now(timezone.utc)
 
     await db.commit()
     return RespondConfirmationResult(
@@ -320,6 +328,8 @@ async def commit_week_decisions(
     reroll_notifications_sent = 0
     unfilled_slots = 0
     warnings: list[str] = []
+    candidate_exhausted = False
+    stop_message: str | None = None
 
     if declined_employee_ids:
         await db.flush()
@@ -341,7 +351,22 @@ async def commit_week_decisions(
             reroll_notifications_sent = sent.notifications_created
             unfilled_slots = regen.unfilled_slots
             warnings = regen.warnings
+            candidate_exhausted = regen.candidate_exhausted
+            stop_message = regen.stop_message
         else:
+            unfilled_slots = declined_count
+            warnings = [
+                f"Unfilled after finalize: {entry.unit_id} "
+                f"{entry.shift_label.value if hasattr(entry.shift_label, 'value') else entry.shift_label} "
+                f"{entry.shift_date} [{entry.employee_id} declined]"
+                for entry in entries
+                if decision_map.get(entry.id) is False
+                and entry.confirmation_status == ConfirmationStatus.DECLINED
+            ]
+            candidate_exhausted = unfilled_slots > 0
+            stop_message = (
+                NO_AVAILABLE_CANDIDATES_MESSAGE if candidate_exhausted else None
+            )
             await db.commit()
     else:
         await db.commit()
@@ -357,6 +382,8 @@ async def commit_week_decisions(
         reroll_notifications_sent=reroll_notifications_sent,
         unfilled_slots=unfilled_slots,
         warnings=warnings[:50],
+        candidate_exhausted=candidate_exhausted,
+        stop_message=stop_message,
         summary=summary,
     )
 

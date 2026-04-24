@@ -215,6 +215,8 @@ class RegenerateWeekResult(BaseModel):
     entries_preserved: int
     warnings: List[str]
     unfilled_slots: int
+    candidate_exhausted: bool = False
+    stop_message: Optional[str] = None
 
 
 class AutogenSubmitRequest(BaseModel):
@@ -238,3 +240,5 @@ class AutogenSubmitResult(BaseModel):
     notifications_sent: int
     unfilled_slots: int
     warnings: List[str]
+    candidate_exhausted: bool = False
+    stop_message: Optional[str] = None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from collections import Counter
 from contextlib import asynccontextmanager, contextmanager
@@ -10,6 +11,7 @@ from typing import Any, AsyncIterator, Optional, Tuple, Union
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.db import session as db_session
 from app.db.session import get_db
 from app.main import app
 from app.models.base import Base
@@ -75,6 +77,11 @@ async def _scenario_environment() -> AsyncIterator[Tuple[AsyncClient, async_sess
                 yield session
 
         app.dependency_overrides[get_db] = override_get_db
+        # The /callouts background task opens its own session via
+        # db_session.async_session_factory — repoint it at the SQLite
+        # test DB for the duration of the scenario.
+        original_factory = db_session.async_session_factory
+        db_session.async_session_factory = session_factory
 
         try:
             with _stub_rationales():
@@ -85,6 +92,7 @@ async def _scenario_environment() -> AsyncIterator[Tuple[AsyncClient, async_sess
                     yield client, session_factory
         finally:
             app.dependency_overrides.pop(get_db, None)
+            db_session.async_session_factory = original_factory
             await engine.dispose()
 
 
@@ -184,7 +192,22 @@ async def _execute_action(
                 json=action.request.model_dump(mode="json"),
             )
             response.raise_for_status()
-            return {"callout": response.json()}, None
+            job = response.json()
+            # POST is now fire-and-forget — poll until the background
+            # recommendation job lands in COMPLETED or FAILED.
+            callout_id = job["callout_id"]
+            for _ in range(200):
+                if job.get("status") in ("COMPLETED", "FAILED"):
+                    break
+                await asyncio.sleep(0.05)
+                poll = await client.get(f"/callouts/{callout_id}")
+                poll.raise_for_status()
+                job = poll.json()
+            if job.get("status") == "FAILED":
+                raise RuntimeError(
+                    f"recommendation job failed: {job.get('error_message')}"
+                )
+            return {"callout": job}, None
 
         response = await client.post(
             "/schedule/generate",

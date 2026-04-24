@@ -52,6 +52,10 @@ PT_WEEKLY_MAX = 24.75  # 3 shifts × 8.25h
 PER_DIEM_WEEKLY_MAX = 41.25  # per diem can work up to full-time
 
 SHIFT_ORDER = [ShiftLabel.DAY, ShiftLabel.EVENING, ShiftLabel.NIGHT]
+NO_AVAILABLE_CANDIDATES_MESSAGE = (
+    "No available candidates remain. Please review the staffing pool or "
+    "scheduling conditions."
+)
 
 
 async def generate_monthly_schedule(
@@ -404,6 +408,8 @@ async def regenerate_week_schedule(
         entries_preserved=len(preserved),
         warnings=warnings[:50],
         unfilled_slots=len(warnings),
+        candidate_exhausted=len(warnings) > 0,
+        stop_message=NO_AVAILABLE_CANDIDATES_MESSAGE if warnings else None,
     )
 
 

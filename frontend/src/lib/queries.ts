@@ -6,6 +6,7 @@ import {
   commitDecisions,
   generateSchedule,
   getAllActiveStaff,
+  getCallout,
   getDemoConfig,
   getMonthlySchedule,
   getRecentCallouts,
@@ -73,12 +74,33 @@ export function useSubmitCallout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: CalloutRequest) => submitCallout(req),
-    onSuccess: (_, req) => {
+    onSuccess: (data, req) => {
       const [year, month] = req.shift_date.split("-").map(Number);
       if (year && month) {
         qc.invalidateQueries({ queryKey: ["workHours", year, month] });
         qc.invalidateQueries({ queryKey: ["monthlySchedule", year, month] });
       }
+      // Seed the cache so the polling query starts from the POST response
+      // instead of issuing a redundant GET right after.
+      qc.setQueryData(["callout", data.callout_id], data);
+    },
+  });
+}
+
+// Polls GET /callouts/{id} every second while the recommendation pipeline
+// is in flight, then stops once the job is COMPLETED or FAILED. Used by
+// the Callout page to resume after navigation.
+export function useCalloutJob(calloutId: number | null) {
+  return useQuery({
+    queryKey: ["callout", calloutId],
+    queryFn: () => getCallout(calloutId!),
+    enabled: calloutId !== null,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 1000;
+      return data.status === "PENDING" || data.status === "RUNNING"
+        ? 1000
+        : false;
     },
   });
 }
@@ -196,6 +218,7 @@ export function useRespondConfirmation(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -207,6 +230,7 @@ export function useCommitDecisions(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -219,6 +243,7 @@ export function useReplaceEntry(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -230,6 +255,7 @@ export function useRemoveEntry(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -252,6 +278,7 @@ export function useRegenerateWeek() {
     onSuccess: (_, req) => {
       qc.invalidateQueries({ queryKey: ["confirmations", req.week_start] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -263,6 +290,7 @@ export function useAutogenSubmit() {
     onSuccess: (_, req) => {
       qc.invalidateQueries({ queryKey: ["confirmations", req.week_start] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -319,6 +347,7 @@ export function useRespondOutreach() {
     onSuccess: (_, args) => {
       qc.invalidateQueries({ queryKey: ["outreach", args.calloutId] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }

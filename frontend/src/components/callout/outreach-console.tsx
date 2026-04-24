@@ -26,7 +26,7 @@ const STATUS_STYLE: Record<
   string,
   { label: string; className: string; icon?: React.ElementType }
 > = {
-  SENT: { label: "Pending", className: "bg-amber-100 text-amber-800 border-amber-200" },
+  SENT: { label: "Awaiting reply", className: "bg-amber-100 text-amber-800 border-amber-200" },
   ACCEPTED: { label: "Accepted", className: "bg-emerald-100 text-emerald-800 border-emerald-200", icon: CheckCircle2 },
   DECLINED: { label: "Declined", className: "bg-red-100 text-red-800 border-red-200", icon: XCircle },
   TIMEOUT: { label: "Timed out", className: "bg-slate-100 text-slate-600 border-slate-200", icon: Clock },
@@ -177,7 +177,7 @@ export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
           </div>
         ) : (
           <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-4 text-xs text-muted-foreground">
-            No active outreach. Select candidates below, then send to selected
+            No one being contacted right now. Pick staff below, then send to selected
             staff or everyone still available.
           </div>
         )}
@@ -348,7 +348,7 @@ export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Contact all {remainingCount} candidates?
+              Reach out to all {remainingCount} staff?
             </DialogTitle>
             <DialogDescription>
               This sends the outreach message to every uncontacted candidate at
@@ -369,7 +369,7 @@ export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
                 setConfirmAllOpen(false);
               }}
             >
-              Contact all {remainingCount}
+              Reach out to all {remainingCount}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -228,13 +228,13 @@ export function CalloutForm({
           {isPending ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Finding Replacements…
+              Finding fill-ins…
             </>
           ) : (
             <>
               {selectedEmployee
-                ? `Find Replacements for ${selectedEmployee.name}`
-                : "Find Replacements"}
+                ? `Find fill-ins for ${selectedEmployee.name}`
+                : "Find fill-ins"}
               <ArrowRight className="h-4 w-4" />
             </>
           )}

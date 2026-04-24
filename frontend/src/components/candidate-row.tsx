@@ -77,7 +77,7 @@ export function CandidateRow({
             {isTop && (
               <Badge className="gap-1 text-[11px] px-1.5 py-0 bg-blue-100 text-blue-800 border border-blue-200 font-semibold">
                 <Star className="h-2.5 w-2.5 fill-current" />
-                Top Pick
+                Best Match
               </Badge>
             )}
           </div>
@@ -117,7 +117,7 @@ export function CandidateRow({
             variant="ghost"
             className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
             onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? "Hide rationale" : "Show rationale"}
+            aria-label={expanded ? "Hide why" : "Show why"}
           >
             <ChevronDown
               className={cn(

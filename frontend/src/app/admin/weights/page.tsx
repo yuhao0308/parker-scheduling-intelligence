@@ -11,10 +11,10 @@ import { useWeights, useUpdateWeights, useResetCalendar } from "@/lib/queries";
 import type { ScoringWeights } from "@/lib/types";
 
 const weightLabels: Record<string, string> = {
-  overtime_headroom: "Overtime Headroom",
-  proximity: "Proximity (tiebreaker)",
-  clinical_fit: "Clinical Fit",
-  float_penalty: "Float Penalty",
+  overtime_headroom: "Hours Left",
+  proximity: "Distance",
+  clinical_fit: "Unit Match",
+  float_penalty: "Home Unit",
 };
 
 export default function WeightsPage() {
@@ -27,7 +27,7 @@ export default function WeightsPage() {
     if (resetCalendarMutation.isPending) return;
     if (
       !window.confirm(
-        "Demo reset: delete every scheduled shift, callout, and invite? The calendar will be empty until you re-run Auto-Gen.",
+        "Demo reset: delete every scheduled shift, call-out, and invite? The calendar will be empty until you re-run Auto-Fill.",
       )
     )
       return;
@@ -94,7 +94,7 @@ export default function WeightsPage() {
   return (
     <div className="max-w-3xl space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Scoring Weights</h2>
+        <h2 className="text-2xl font-bold">Matching Priorities</h2>
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleReset}>
             Reset
@@ -114,14 +114,14 @@ export default function WeightsPage() {
           <CardTitle className="flex items-center justify-between text-base">
             <span className="flex items-center gap-2">
               <Badge className="bg-amber-200 text-amber-900">Demo only</Badge>
-              <span>Reset calendar</span>
+              <span>Clear calendar</span>
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="flex items-center justify-between gap-4">
           <div className="text-sm text-muted-foreground">
-            Wipe every scheduled shift, callout, and invite so the month starts
-            empty. Use this before a fresh Auto-Gen walkthrough on the Schedule
+            Wipe every scheduled shift, call-out, and invite so the month starts
+            empty. Use this before a fresh Auto-Fill walkthrough on the Schedule
             page.
           </div>
           <div className="flex flex-col items-end gap-1">
@@ -133,7 +133,7 @@ export default function WeightsPage() {
             >
               {resetCalendarMutation.isPending
                 ? "Resetting..."
-                : "Reset calendar"}
+                : "Clear calendar"}
             </Button>
             {resetCalendarMutation.isSuccess && (
               <span className="text-[11px] text-emerald-700">
@@ -153,9 +153,9 @@ export default function WeightsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>Dimension Weights</span>
+            <span>How Much Each Factor Counts</span>
             <Badge variant={isSumValid ? "secondary" : "destructive"}>
-              Sum: {weightSum.toFixed(2)}
+              Total: {weightSum.toFixed(2)}
             </Badge>
           </CardTitle>
         </CardHeader>
@@ -187,7 +187,7 @@ export default function WeightsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Thresholds</CardTitle>
+          <CardTitle>Rules &amp; Limits</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {Object.entries(draft.thresholds).map(([key, value]) => (
@@ -208,7 +208,7 @@ export default function WeightsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Clinical Fit Scores</CardTitle>
+          <CardTitle>Unit Match Scores</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {Object.entries(draft.clinical_fit_scores).map(([key, value]) => (
@@ -232,7 +232,7 @@ export default function WeightsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Float Penalty Values</CardTitle>
+          <CardTitle>Home Unit Preference Values</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {Object.entries(draft.float_penalty_values).map(([key, value]) => (

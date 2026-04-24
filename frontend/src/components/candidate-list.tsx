@@ -56,7 +56,7 @@ export function CandidateList({
   if (candidates.length === 0) {
     return (
       <div className="py-12 text-center text-sm text-muted-foreground">
-        No eligible candidates found after filtering.
+        No staff available for this shift.
       </div>
     );
   }
@@ -106,7 +106,7 @@ function SearchBar({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search by name"
-        aria-label="Search candidates by name"
+        aria-label="Search staff by name"
         className="h-9 pl-9 pr-9 [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none"
       />
       {value && (
@@ -142,7 +142,7 @@ function FilteredResults({
   if (matches.length === 0) {
     return (
       <div className="py-8 text-center text-sm text-muted-foreground">
-        No candidates match &ldquo;{query}&rdquo;.
+        No staff match &ldquo;{query}&rdquo;.
       </div>
     );
   }
@@ -185,7 +185,7 @@ function TieredResults({
       {/* Top recommendation */}
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Top Recommendation
+          Best Match
         </p>
         <CandidateRow
           candidate={topRecommendation}
@@ -197,7 +197,7 @@ function TieredResults({
 
       {closeTierAlternatives.length > 0 && (
         <CollapsibleSection
-          title="Very Close Alternatives"
+          title="Nearly as Good"
           count={closeTierAlternatives.length}
         >
           {closeTierAlternatives.map((c) => (
@@ -213,7 +213,7 @@ function TieredResults({
 
       {strongAlternatives.length > 0 && (
         <CollapsibleSection
-          title="Strong Alternatives"
+          title="Good Options"
           count={strongAlternatives.length}
         >
           {strongAlternatives.map((c) => (
@@ -228,7 +228,7 @@ function TieredResults({
       )}
 
       {backupOptions.length > 0 && (
-        <CollapsibleSection title="Backup Options" count={backupOptions.length}>
+        <CollapsibleSection title="If You Need More" count={backupOptions.length}>
           {backupOptions.map((c) => (
             <CandidateRow
               key={c.employee_id}

@@ -224,7 +224,7 @@ export function ShiftDetailDialog({
             <div className="flex flex-col items-center gap-3 py-6 text-center">
               <AlertCircle className="h-7 w-7 text-destructive" />
               <p className="text-sm text-destructive max-w-sm">
-                {job?.error_message ?? "Recommendation pipeline failed."}
+                {job?.error_message ?? "Couldn't find matches."}
               </p>
               <Button size="sm" className="gap-2" onClick={handleRetry}>
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -234,7 +234,7 @@ export function ShiftDetailDialog({
           ) : result ? (
             <div className="space-y-3">
               <div className="text-sm font-medium">
-                Recommended Replacements ({result.candidates.length})
+                Suggested Fill-ins ({result.candidates.length})
               </div>
               <CandidateList
                 candidates={result.candidates}

@@ -47,7 +47,7 @@ export function CalloutTab({ year, month }: CalloutTabProps) {
   return (
     <div className="space-y-3">
       <div className="text-xs text-muted-foreground">
-        Red dots mark days with active (unfilled) callouts. Click a day to file a
+        Red dots mark days with open call-outs. Click a day to report a
         callout prefilled with that date.
       </div>
 
@@ -82,7 +82,7 @@ export function CalloutTab({ year, month }: CalloutTabProps) {
               title={
                 info
                   ? `${info.active} active / ${info.total} total callout${info.total === 1 ? "" : "s"}`
-                  : "File a callout for this day"
+                  : "Report a call-out for this day"
               }
             >
               <span>{cell.day}</span>
@@ -110,7 +110,7 @@ export function CalloutTab({ year, month }: CalloutTabProps) {
             : `${activeDays} day${activeDays === 1 ? "" : "s"} with active callouts`}
         </div>
         <Button size="sm" onClick={() => goToCalloutForm()}>
-          File a callout
+          Report a call-out
         </Button>
       </div>
     </div>

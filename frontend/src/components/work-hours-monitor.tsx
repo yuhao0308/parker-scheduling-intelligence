@@ -46,22 +46,22 @@ const STATUS_STYLES = {
   healthy: {
     badge: "bg-emerald-50 text-emerald-700 ring-emerald-200",
     bar: "bg-emerald-500",
-    label: "Healthy",
+    label: "On track",
   },
   near_ot: {
     badge: "bg-amber-50 text-amber-800 ring-amber-200",
     bar: "bg-amber-500",
-    label: "Watch",
+    label: "Near OT",
   },
   overtime: {
     badge: "bg-orange-50 text-orange-800 ring-orange-200",
     bar: "bg-orange-500",
-    label: "OT",
+    label: "At OT",
   },
   high_ot: {
     badge: "bg-rose-50 text-rose-800 ring-rose-200",
     bar: "bg-rose-500",
-    label: "High OT",
+    label: "Over OT",
   },
 } as const;
 
@@ -677,14 +677,14 @@ export function WorkHoursMonitor() {
                   icon={Gauge}
                   label="OT Watch"
                   value={`${(data?.summary.employees_near_ot ?? 0) + (data?.summary.employees_in_ot ?? 0) + (data?.summary.employees_high_ot ?? 0)}`}
-                  sublabel={`${data?.summary.employees_in_ot ?? 0} OT, ${data?.summary.employees_high_ot ?? 0} high OT`}
+                  sublabel={`${data?.summary.employees_in_ot ?? 0} at OT, ${data?.summary.employees_high_ot ?? 0} over OT`}
                   accentClassName="bg-amber-50 text-amber-700 ring-amber-200"
                 />
                 <SummaryCard
                   icon={Clock3}
-                  label="Float Shifts"
+                  label="Covering Other Units"
                   value={`${data?.summary.total_float_shifts ?? 0}`}
-                  sublabel="Outside home units"
+                  sublabel="Shifts outside home unit"
                   accentClassName="bg-cyan-50 text-cyan-700 ring-cyan-200"
                 />
               </div>
@@ -706,10 +706,10 @@ export function WorkHoursMonitor() {
                     onChange={(event) => setStatusFilter(event.target.value)}
                   >
                     <option value="all">All statuses</option>
-                    <option value="watch">Watch list</option>
-                    <option value="overtime">OT</option>
-                    <option value="high_ot">High OT</option>
-                    <option value="healthy">Healthy</option>
+                    <option value="watch">Near OT</option>
+                    <option value="overtime">At OT</option>
+                    <option value="high_ot">Over OT</option>
+                    <option value="healthy">On track</option>
                   </select>
                   <div className="rounded-2xl bg-slate-50 px-3 py-2.5 text-sm leading-6 text-muted-foreground">
                     OT markers combine selected-month assignments with the latest synced ledger data.

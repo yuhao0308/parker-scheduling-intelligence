@@ -715,10 +715,10 @@ export function AutoGenTab({
         >
           <Sparkles className="h-3.5 w-3.5" />
           {submitPending
-            ? "Generating…"
+            ? "Building…"
             : scheduleScope === "month"
-              ? "Generate month"
-              : "Generate & invite"}
+              ? "Build month"
+              : "Build & send invites"}
         </Button>
       </div>
 
@@ -837,13 +837,13 @@ function StatGrid({
 
       <StatTile label="Pool" value={poolSize} sublabel={`of ${staffTotal}`} />
       <StatTile
-        label={scope === "month" ? "Unfilled" : "Pending"}
+        label={scope === "month" ? "Open" : "Waiting"}
         value={pending}
         sublabel={
           pending === 0
             ? "—"
             : scope === "month"
-              ? "people-slots"
+              ? "shifts"
               : "awaiting reply"
         }
         tone={pending > 0 ? "amber" : undefined}
@@ -857,7 +857,7 @@ function StatGrid({
       <StatTile
         label="Demand"
         value={demand}
-        sublabel="people-slots"
+        sublabel="shifts"
       />
     </div>
   );
@@ -958,7 +958,7 @@ function ReviewBanner({
           className="h-7 px-3 text-xs gap-1"
           aria-label={`Commit ${pendingCount} decisions`}
         >
-          {isCommitting ? "Committing…" : `Finalize ${pendingCount}`}
+          {isCommitting ? "Locking in…" : `Lock in ${pendingCount}`}
         </Button>
       </div>
 
@@ -1177,7 +1177,7 @@ function StaffRow({
             disabled={mutating}
             aria-label={`Remove ${staff.name} from pool`}
           >
-            Remove from pool
+            Remove from list
           </Button>
         )}
       </div>

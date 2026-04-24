@@ -22,7 +22,7 @@ const ORB_LABEL: Record<ConfirmationStatus, string> = {
   PENDING: "Awaiting reply",
   ACCEPTED: "Accepted",
   DECLINED: "Declined",
-  REPLACED: "Reassigned / cleared",
+  REPLACED: "Swapped out",
 };
 
 interface StatusOrbProps {

@@ -314,7 +314,7 @@ function FailedJobView({
         <AlertCircle className="h-8 w-8 text-destructive" />
         <div className="space-y-1">
           <p className="text-base font-medium text-destructive">
-            Recommendation pipeline failed
+            Couldn&apos;t find matches
           </p>
           <p className="text-sm text-muted-foreground max-w-md">
             {job.error_message ?? "An unknown error occurred."}
@@ -354,7 +354,7 @@ function ResultsView({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h3 className="text-lg font-semibold">
-            Replacements for {result.unit_name}
+            Fill-ins for {result.unit_name}
           </h3>
           <p className="text-sm text-muted-foreground">
             {result.shift_label} shift · {result.shift_date}

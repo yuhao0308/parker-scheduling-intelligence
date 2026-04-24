@@ -49,7 +49,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-3 gap-4">
         <StatCard label="Recent Callouts" value={totalCallouts} />
         <StatCard
-          label="Replacements Filled"
+          label="Fill-ins Found"
           value={filledCount}
           sub={
             totalCallouts > 0
@@ -256,7 +256,7 @@ function CalloutRow({ callout: c }: { callout: RecentCallout }) {
       <div className="flex flex-col items-end gap-1 min-w-[7rem]">
         {isTopPick && (
           <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] px-2 py-0 font-semibold">
-            Top Pick
+            Best Match
           </Badge>
         )}
         {isOverride && (

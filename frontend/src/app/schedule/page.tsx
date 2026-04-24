@@ -190,7 +190,7 @@ export default function SchedulePage() {
               </span>
               {generateMutation.data.unfilled_slots > 0 && (
                 <span className="text-destructive">
-                  {generateMutation.data.unfilled_slots} unfilled slots
+                  {generateMutation.data.unfilled_slots} open shifts
                 </span>
               )}
             </div>
@@ -284,7 +284,7 @@ export default function SchedulePage() {
               onClick={handleGenerate}
               disabled={generateMutation.isPending}
             >
-              {generateMutation.isPending ? "Generating..." : "Generate"}
+              {generateMutation.isPending ? "Building..." : "Build"}
             </Button>
           </DialogFooter>
         </DialogContent>

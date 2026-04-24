@@ -37,7 +37,7 @@ export function OperatorPanel({
           active={mode === "autogen"}
           onClick={() => setMode("autogen")}
           label="Auto Gen"
-          hint="Build next week's schedule"
+          hint="Build week or month"
         />
         <TabButton
           active={mode === "callout"}
@@ -51,6 +51,8 @@ export function OperatorPanel({
       <div className="p-3">
         {mode === "autogen" ? (
           <AutoGenTab
+            year={year}
+            month={month}
             weekStart={weekStart}
             onWeekStartChange={onWeekStartChange}
           />

@@ -407,6 +407,185 @@ async def regenerate_week_schedule(
     )
 
 
+async def regenerate_month_schedule(
+    year: int,
+    month: int,
+    employee_pool: list[str],
+    db: AsyncSession,
+    settings: Settings,
+    preserve_responded: bool = True,
+) -> ScheduleGenerationResult:
+    """Regenerate a full month while preserving reviewed/pending entries."""
+    _, last_day = calendar.monthrange(year, month)
+    first = date(year, month, 1)
+    last = date(year, month, last_day)
+
+    preserved_statuses = [ConfirmationStatus.ACCEPTED]
+    if preserve_responded:
+        preserved_statuses.append(ConfirmationStatus.PENDING)
+
+    existing_result = await db.execute(
+        select(ScheduleEntry).where(ScheduleEntry.shift_date.between(first, last))
+    )
+    existing = list(existing_result.scalars().all())
+    preserved = [e for e in existing if e.confirmation_status in preserved_statuses]
+
+    removable_ids = [e.id for e in existing if e.confirmation_status not in preserved_statuses]
+    if removable_ids:
+        await db.execute(
+            delete(SimulatedNotification).where(
+                SimulatedNotification.schedule_entry_id.in_(removable_ids)
+            )
+        )
+        await db.execute(delete(ScheduleEntry).where(ScheduleEntry.id.in_(removable_ids)))
+
+    weekly_hours: dict[tuple[str, int], float] = defaultdict(float)
+    daily_shifts: dict[tuple[str, date], list[tuple[date, ShiftLabel]]] = defaultdict(list)
+    for e in preserved:
+        label = e.shift_label if isinstance(e.shift_label, ShiftLabel) else ShiftLabel(e.shift_label.value)
+        wk = e.shift_date.isocalendar()[1]
+        weekly_hours[(e.employee_id, wk)] += SHIFT_DURATION_HOURS
+        daily_shifts[(e.employee_id, e.shift_date)].append((e.shift_date, label))
+
+    units_result = await db.execute(select(Unit).where(Unit.is_active == True))
+    units = sorted(
+        units_result.scalars().all(),
+        key=lambda unit: (
+            0 if UnitTypology(unit.typology.value) == UnitTypology.SUBACUTE else 1,
+            unit.unit_id,
+        ),
+    )
+
+    staff_list = await load_staff_pool(db)
+    all_staff_candidates = build_candidate_records(staff_list)
+    staff_by_id = {c.employee_id: c for c in all_staff_candidates}
+    pool_set = set(employee_pool)
+    all_candidates = [c for c in all_staff_candidates if c.employee_id in pool_set]
+
+    preserved_counts: dict[tuple[date, str, ShiftLabel], dict[str, int]] = defaultdict(
+        lambda: {"licensed": 0, "certified": 0}
+    )
+    for e in preserved:
+        label = e.shift_label if isinstance(e.shift_label, ShiftLabel) else ShiftLabel(e.shift_label.value)
+        staff = staff_by_id.get(e.employee_id)
+        if not staff:
+            continue
+        bucket = "licensed" if staff.license in LICENSED_ROLES else "certified"
+        preserved_counts[(e.shift_date, e.unit_id, label)][bucket] += 1
+
+    scoring_config = load_scoring_config(settings.scoring_weights_path)
+    base_hours_map = await load_hours_map(db)
+
+    entries_created = 0
+    warnings: list[str] = []
+
+    for d in range(1, last_day + 1):
+        current_date = date(year, month, d)
+        week_num = current_date.isocalendar()[1]
+
+        for unit in units:
+            unit_typology = UnitTypology(unit.typology.value)
+
+            for shift_label in SHIFT_ORDER:
+                requirements = slot_requirements(unit, shift_label)
+                key = (current_date, unit.unit_id, shift_label)
+                preserved_for_slot = preserved_counts.get(
+                    key, {"licensed": 0, "certified": 0}
+                )
+                if unit_typology == UnitTypology.SUBACUTE:
+                    bucket_order = [
+                        (
+                            "licensed",
+                            max(0, requirements.licensed - preserved_for_slot["licensed"]),
+                        ),
+                        (
+                            "certified",
+                            max(0, requirements.certified - preserved_for_slot["certified"]),
+                        ),
+                    ]
+                else:
+                    bucket_order = [
+                        (
+                            "certified",
+                            max(0, requirements.certified - preserved_for_slot["certified"]),
+                        ),
+                        (
+                            "licensed",
+                            max(0, requirements.licensed - preserved_for_slot["licensed"]),
+                        ),
+                    ]
+
+                for required_bucket, count_needed in bucket_order:
+                    for ordinal in range(1, count_needed + 1):
+                        assigned = _assign_one(
+                            candidates=all_candidates,
+                            required_bucket=required_bucket,
+                            unit=unit,
+                            unit_typology=unit_typology,
+                            current_date=current_date,
+                            shift_label=shift_label,
+                            week_num=week_num,
+                            weekly_hours=weekly_hours,
+                            daily_shifts=daily_shifts,
+                            base_hours_map=base_hours_map,
+                            scoring_config=scoring_config,
+                            settings=settings,
+                            db=db,
+                        )
+                        if not assigned:
+                            warnings.append(
+                                f"Unfilled: {unit.unit_id} {shift_label.value} "
+                                f"{current_date} [{required_bucket} #{ordinal}]"
+                            )
+                            continue
+
+                        emp_id = assigned.employee_id
+                        entry = ScheduleEntry(
+                            employee_id=emp_id,
+                            unit_id=unit.unit_id,
+                            shift_date=current_date,
+                            shift_label=shift_label,
+                            is_published=False,
+                            confirmation_status=ConfirmationStatus.UNSENT,
+                        )
+                        db.add(entry)
+                        entries_created += 1
+
+                        weekly_hours[(emp_id, week_num)] += SHIFT_DURATION_HOURS
+                        daily_shifts[(emp_id, current_date)].append(
+                            (current_date, shift_label)
+                        )
+
+    await db.commit()
+
+    unfilled = len(warnings)
+    total_slots = entries_created + unfilled
+    unfilled_pct = (unfilled / total_slots * 100) if total_slots > 0 else 0
+    if unfilled == 0:
+        scenario = "ideal"
+    elif unfilled_pct <= 10:
+        scenario = "moderate"
+    else:
+        scenario = "critical"
+
+    logger.info(
+        "month_regenerated",
+        year=year,
+        month=month,
+        pool_size=len(pool_set),
+        entries_created=entries_created,
+        entries_preserved=len(preserved),
+        unfilled=unfilled,
+    )
+
+    return ScheduleGenerationResult(
+        entries_created=entries_created,
+        warnings=warnings[:50],
+        scenario=scenario,
+        unfilled_slots=unfilled,
+    )
+
+
 def _assign_one(
     candidates: list[CandidateRecord],
     required_bucket: str,

@@ -9,19 +9,24 @@ import { StatusOrb } from "@/components/schedule/status-orb";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
+  CalendarDays,
+  CalendarRange,
   CheckCircle2,
   Search,
-  Send,
   Sparkles,
+  type LucideIcon,
   X,
   XCircle,
 } from "lucide-react";
 import {
   useAllActiveStaff,
   useAutogenSubmit,
+  useAutogenSubmitMonth,
   useCommitDecisions,
+  useCommitMonthlyDecisions,
   useConfirmations,
   useDemoConfig,
+  useMonthlyConfirmations,
   useMonthlySchedule,
   useRemoveEntry,
   useUnits,
@@ -34,9 +39,18 @@ import type {
 } from "@/lib/types";
 
 interface AutoGenTabProps {
+  year: number;
+  month: number;
   weekStart: string;
   onWeekStartChange: (value: string) => void;
 }
+
+type ScheduleScope = "week" | "month";
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 // Priority order when an employee has multiple entries this week — whichever
 // is "most actionable" drives their row's orb color.
@@ -58,12 +72,23 @@ interface EmployeeMembership {
 type RowError = { message: string; retry: () => void };
 
 export function AutoGenTab({
+  year,
+  month,
   weekStart,
   onWeekStartChange,
 }: AutoGenTabProps) {
+  const [scheduleScope, setScheduleScope] = useState<ScheduleScope>("week");
   const { data: staff = [] } = useAllActiveStaff();
   const { data: units = [] } = useUnits();
-  const { data: confirmations } = useConfirmations(weekStart);
+  const { data: confirmations } = useConfirmations(
+    weekStart,
+    scheduleScope === "week",
+  );
+  const { data: monthlyConfirmations } = useMonthlyConfirmations(
+    year,
+    month,
+    scheduleScope === "month",
+  );
   const { data: demoConfig } = useDemoConfig();
   const weekStartDate = useMemo(
     () => new Date(`${weekStart}T00:00:00`),
@@ -73,13 +98,18 @@ export function AutoGenTab({
     weekStartDate.getFullYear(),
     weekStartDate.getMonth() + 1,
   );
+  const { data: selectedMonthlySchedule } = useMonthlySchedule(year, month);
+  const activeConfirmations =
+    scheduleScope === "week" ? confirmations : monthlyConfirmations;
 
   const autogenMutation = useAutogenSubmit();
+  const monthlyAutogenMutation = useAutogenSubmitMonth();
   const commitMutation = useCommitDecisions(weekStart);
+  const commitMonthlyMutation = useCommitMonthlyDecisions(year, month);
   const removeMutation = useRemoveEntry(weekStart);
 
   // Pool: supervisor's checkbox selection. Until they touch it, derive from
-  // whoever already has a non-REPLACED entry this week.
+  // the active week in week mode, or default to all staff in month mode.
   const [manualPool, setManualPool] = useState<Set<string> | null>(null);
   const [rowErrors, setRowErrors] = useState<Map<string, RowError>>(new Map());
   const [searchQuery, setSearchQuery] = useState("");
@@ -94,12 +124,15 @@ export function AutoGenTab({
 
   const derivedPool = useMemo(() => {
     if (manualPool) return manualPool;
+    if (scheduleScope === "month") {
+      return new Set(staff.map((s) => s.employee_id));
+    }
     const seeded = new Set<string>();
-    for (const e of confirmations?.entries ?? []) {
+    for (const e of activeConfirmations?.entries ?? []) {
       if (e.confirmation_status !== "REPLACED") seeded.add(e.employee_id);
     }
     return seeded;
-  }, [manualPool, confirmations]);
+  }, [manualPool, scheduleScope, staff, activeConfirmations]);
   const pool = derivedPool;
   const setPool = (updater: (prev: Set<string>) => Set<string>) => {
     setManualPool((prev) => updater(prev ?? derivedPool));
@@ -108,7 +141,7 @@ export function AutoGenTab({
   // Map employee_id → membership snapshot for this week.
   const byEmployee = useMemo(() => {
     const m = new Map<string, EmployeeMembership>();
-    for (const e of confirmations?.entries ?? []) {
+    for (const e of activeConfirmations?.entries ?? []) {
       const existing = m.get(e.employee_id);
       if (!existing) {
         m.set(e.employee_id, {
@@ -143,16 +176,16 @@ export function AutoGenTab({
       membership.oldestPending = membership.pendingEntries[0] ?? null;
     }
     return m;
-  }, [confirmations]);
+  }, [activeConfirmations]);
 
   // Seed intents: every newly-appearing PENDING entry starts as "Keep"
   // (checked). Once the scheduler toggles it, we preserve their choice.
   useEffect(() => {
-    if (!confirmations) return;
+    if (!activeConfirmations) return;
     const currentPendingIds = new Set<number>();
     let changed = false;
     const next = new Map(intents);
-    for (const e of confirmations.entries) {
+    for (const e of activeConfirmations.entries) {
       if (e.confirmation_status === "PENDING") {
         currentPendingIds.add(e.entry_id);
         if (!seenIntentIdsRef.current.has(e.entry_id)) {
@@ -170,7 +203,7 @@ export function AutoGenTab({
     }
     if (changed) setIntents(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmations]);
+  }, [activeConfirmations]);
 
   const confirmationLabel = demoConfig?.confirmation_timeout_label ?? "2 hours";
 
@@ -184,6 +217,15 @@ export function AutoGenTab({
   }
 
   function handleSubmit() {
+    if (scheduleScope === "month") {
+      monthlyAutogenMutation.mutate({
+        year,
+        month,
+        employee_pool: Array.from(pool),
+      });
+      return;
+    }
+
     autogenMutation.mutate({
       week_start: weekStart,
       employee_pool: Array.from(pool),
@@ -200,8 +242,8 @@ export function AutoGenTab({
   }
 
   async function handleCommit() {
-    if (!confirmations) return;
-    const pending = confirmations.entries.filter(
+    if (!activeConfirmations) return;
+    const pending = activeConfirmations.entries.filter(
       (e) => e.confirmation_status === "PENDING",
     );
     if (pending.length === 0) return;
@@ -210,14 +252,25 @@ export function AutoGenTab({
     setCommitError(null);
 
     try {
-      const result = await commitMutation.mutateAsync({
-        week_start: weekStart,
-        employee_pool: Array.from(pool),
-        decisions: pending.map((entry) => ({
-          entry_id: entry.entry_id,
-          keep: intents.get(entry.entry_id) !== false,
-        })),
-      });
+      const result =
+        scheduleScope === "month"
+          ? await commitMonthlyMutation.mutateAsync({
+              year,
+              month,
+              employee_pool: Array.from(pool),
+              decisions: pending.map((entry) => ({
+                entry_id: entry.entry_id,
+                keep: intents.get(entry.entry_id) !== false,
+              })),
+            })
+          : await commitMutation.mutateAsync({
+              week_start: weekStart,
+              employee_pool: Array.from(pool),
+              decisions: pending.map((entry) => ({
+                entry_id: entry.entry_id,
+                keep: intents.get(entry.entry_id) !== false,
+              })),
+            });
 
       if (result.declined_employee_ids.length > 0) {
         const reducedPool = new Set(pool);
@@ -289,55 +342,94 @@ export function AutoGenTab({
     });
   }
 
-  const summary = confirmations?.summary;
-  const submitDisabled = autogenMutation.isPending || pool.size === 0;
+  const summary = activeConfirmations?.summary;
+  const submitPending =
+    scheduleScope === "week"
+      ? autogenMutation.isPending
+      : monthlyAutogenMutation.isPending;
+  const submitDisabled = submitPending || pool.size === 0;
   const pendingCount = summary?.pending ?? 0;
-  const acceptedCount = summary?.accepted ?? 0;
+  const acceptedCount = scheduleScope === "week" ? (summary?.accepted ?? 0) : 0;
   const commitDisabled =
     isCommitting ||
     pendingCount === 0 ||
     commitMutation.isPending ||
-    autogenMutation.isPending;
+    commitMonthlyMutation.isPending ||
+    autogenMutation.isPending ||
+    monthlyAutogenMutation.isPending;
   const mutating =
-    commitMutation.isPending || removeMutation.isPending || isCommitting;
+    commitMutation.isPending ||
+    commitMonthlyMutation.isPending ||
+    removeMutation.isPending ||
+    isCommitting;
 
   const unitCount = units.length;
-  const { peopleSlots } = useMemo(() => {
+  const { peopleSlots, assignedSlots, openSlots } = useMemo(() => {
+    if (scheduleScope === "month") {
+      if (!selectedMonthlySchedule) {
+        const shifts = unitCount * new Date(year, month, 0).getDate() * 3;
+        return { peopleSlots: shifts * 2, assignedSlots: 0, openSlots: 0 };
+      }
+      let required = 0;
+      let assigned = 0;
+      for (const day of selectedMonthlySchedule.days) {
+        for (const slot of day.slots) {
+          required += slot.required_count;
+          assigned += slot.assigned_employees.length;
+        }
+      }
+      return {
+        peopleSlots: required,
+        assignedSlots: assigned,
+        openSlots: Math.max(0, required - assigned),
+      };
+    }
+
     if (!monthlyForDemand) {
       const shifts = unitCount * 7 * 3;
-      return { peopleSlots: shifts * 2, shiftsPerWeek: shifts };
+      return {
+        peopleSlots: shifts * 2,
+        assignedSlots: acceptedCount,
+        openSlots: 0,
+      };
     }
     const startMs = weekStartDate.getTime();
     const endMs = startMs + 7 * 24 * 60 * 60 * 1000;
     let required = 0;
-    let shifts = 0;
     for (const day of monthlyForDemand.days) {
       const ms = Date.parse(`${day.date}T00:00:00`);
       if (ms < startMs || ms >= endMs) continue;
       for (const slot of day.slots) {
         required += slot.required_count;
-        if (slot.required_count > 0) shifts += 1;
       }
     }
-    return { peopleSlots: required, shiftsPerWeek: shifts };
-  }, [monthlyForDemand, weekStartDate, unitCount]);
+    return { peopleSlots: required, assignedSlots: acceptedCount, openSlots: 0 };
+  }, [
+    acceptedCount,
+    monthlyForDemand,
+    month,
+    scheduleScope,
+    selectedMonthlySchedule,
+    unitCount,
+    weekStartDate,
+    year,
+  ]);
 
   // Intent preview — count how many checked vs. unchecked will be committed.
   const intentPreview = useMemo(() => {
     let keep = 0;
     let remove = 0;
-    for (const e of confirmations?.entries ?? []) {
+    for (const e of activeConfirmations?.entries ?? []) {
       if (e.confirmation_status !== "PENDING") continue;
       if (intents.get(e.entry_id) === false) remove += 1;
       else keep += 1;
     }
     return { keep, remove };
-  }, [confirmations, intents]);
+  }, [activeConfirmations, intents]);
 
-  const totalAssigned = acceptedCount + pendingCount;
   const fillPercent =
     peopleSlots > 0
-      ? Math.min(100, Math.round((acceptedCount / peopleSlots) * 100))
+      ? Math.min(100, Math.round((assignedSlots / peopleSlots) * 100))
       : 0;
   const hasPool = staff.length > 0;
 
@@ -349,32 +441,66 @@ export function AutoGenTab({
 
   return (
     <div className="space-y-4">
-      {/* Week picker */}
-      <div className="flex items-center justify-between gap-2">
-        <Label
-          htmlFor="autogen-week-start"
-          className="text-xs text-muted-foreground"
-        >
-          Week of
-        </Label>
-        <Input
-          id="autogen-week-start"
-          type="date"
-          value={weekStart}
-          onChange={(e) => onWeekStartChange(e.target.value)}
-          className="h-8 text-xs w-40"
-        />
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 rounded-lg border bg-muted/30 p-1">
+          <ScopeButton
+            active={scheduleScope === "week"}
+            icon={CalendarDays}
+            label="Week"
+            onClick={() => setScheduleScope("week")}
+          />
+          <ScopeButton
+            active={scheduleScope === "month"}
+            icon={CalendarRange}
+            label="Month"
+            onClick={() => setScheduleScope("month")}
+          />
+        </div>
+        {scheduleScope === "month" && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] leading-snug text-amber-900">
+            Monthly generation rebuilds {MONTH_NAMES[month - 1]} {year} from
+            the selected pool and sends those assignments into this same review
+            queue.
+          </div>
+        )}
       </div>
+
+      {/* Week picker */}
+      {scheduleScope === "week" ? (
+        <div className="flex items-center justify-between gap-2">
+          <Label
+            htmlFor="autogen-week-start"
+            className="text-xs text-muted-foreground"
+          >
+            Week of
+          </Label>
+          <Input
+            id="autogen-week-start"
+            type="date"
+            value={weekStart}
+            onChange={(e) => onWeekStartChange(e.target.value)}
+            className="h-8 text-xs w-40"
+          />
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2">
+          <span className="text-xs text-muted-foreground">Month</span>
+          <span className="text-xs font-medium">
+            {MONTH_NAMES[month - 1]} {year}
+          </span>
+        </div>
+      )}
 
       {/* Stat tile grid — progress at a glance */}
       <StatGrid
+        scope={scheduleScope}
         poolSize={pool.size}
         staffTotal={staff.length}
         fillPercent={fillPercent}
-        assigned={acceptedCount}
+        assigned={assignedSlots}
         demand={peopleSlots}
-        pending={pendingCount}
-        confirmed={acceptedCount}
+        pending={scheduleScope === "month" ? openSlots : pendingCount}
+        confirmed={scheduleScope === "week" ? acceptedCount : assignedSlots}
       />
 
       {/* Review banner — only when there are pending decisions */}
@@ -391,7 +517,8 @@ export function AutoGenTab({
       )}
 
       {/* Unfilled warning — only after a submit that couldn't fill everything */}
-      {autogenMutation.isSuccess &&
+      {scheduleScope === "week" &&
+        autogenMutation.isSuccess &&
         autogenMutation.data &&
         autogenMutation.data.unfilled_slots > 0 && (
           <UnfilledCallout
@@ -400,8 +527,19 @@ export function AutoGenTab({
           />
         )}
 
+      {scheduleScope === "month" &&
+        monthlyAutogenMutation.isSuccess &&
+        monthlyAutogenMutation.data &&
+        monthlyAutogenMutation.data.unfilled_slots > 0 && (
+          <UnfilledCallout
+            count={monthlyAutogenMutation.data.unfilled_slots}
+            warnings={monthlyAutogenMutation.data.warnings}
+          />
+        )}
+
       {/* Send success toast (auto-fades concept — just a subtle confirmation) */}
-      {autogenMutation.isSuccess &&
+      {scheduleScope === "week" &&
+        autogenMutation.isSuccess &&
         autogenMutation.data &&
         autogenMutation.data.unfilled_slots === 0 &&
         autogenMutation.data.entries_generated > 0 && (
@@ -416,6 +554,24 @@ export function AutoGenTab({
               <strong>{autogenMutation.data.notifications_sent}</strong> invite
               {autogenMutation.data.notifications_sent === 1 ? "" : "s"} sent ·
               replies due within {confirmationLabel}
+            </span>
+          </div>
+        )}
+
+      {scheduleScope === "month" &&
+        monthlyAutogenMutation.isSuccess &&
+        monthlyAutogenMutation.data &&
+        monthlyAutogenMutation.data.unfilled_slots === 0 && (
+          <div
+            className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-800"
+            role="status"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              <strong>{monthlyAutogenMutation.data.entries_generated}</strong>{" "}
+              shift
+              {monthlyAutogenMutation.data.entries_generated === 1 ? "" : "s"}{" "}
+              scheduled for {MONTH_NAMES[month - 1]} {year}
             </span>
           </div>
         )}
@@ -533,7 +689,9 @@ export function AutoGenTab({
       {/* Footer — Send invites CTA */}
       <div className="flex items-center justify-between gap-3 pt-1">
         <div className="text-[11px] text-muted-foreground leading-tight">
-          {pendingCount > 0 ? (
+          {scheduleScope === "month" ? (
+            "Builds the selected month from the checked staff pool"
+          ) : pendingCount > 0 ? (
             <span className="text-amber-700">
               {pendingCount} pending{" "}
               {pendingCount === 1 ? "reply" : "replies"} won&apos;t be re-sent
@@ -549,14 +707,22 @@ export function AutoGenTab({
           onClick={handleSubmit}
           disabled={submitDisabled}
           className="gap-1.5 h-8"
-          aria-label="Send invites to newly added pool members"
+          aria-label={
+            scheduleScope === "month"
+              ? `Generate schedule for ${MONTH_NAMES[month - 1]} ${year}`
+              : "Send invites to newly added pool members"
+          }
         >
           <Sparkles className="h-3.5 w-3.5" />
-          {autogenMutation.isPending ? "Generating…" : "Generate & invite"}
+          {submitPending
+            ? "Generating…"
+            : scheduleScope === "month"
+              ? "Generate month"
+              : "Generate & invite"}
         </Button>
       </div>
 
-      {autogenMutation.isError && (
+      {scheduleScope === "week" && autogenMutation.isError && (
         <div
           className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
           role="alert"
@@ -567,13 +733,56 @@ export function AutoGenTab({
           </span>
         </div>
       )}
+
+      {scheduleScope === "month" && monthlyAutogenMutation.isError && (
+        <div
+          className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          role="alert"
+        >
+          <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <span>
+            {(monthlyAutogenMutation.error as Error)?.message ??
+              "Monthly generation failed."}
+          </span>
+        </div>
+      )}
     </div>
+  );
+}
+
+function ScopeButton({
+  active,
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors",
+        active
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+    </button>
   );
 }
 
 /* ── Stat grid ───────────────────────────────────────────────────────── */
 
 interface StatGridProps {
+  scope: ScheduleScope;
   poolSize: number;
   staffTotal: number;
   fillPercent: number;
@@ -584,6 +793,7 @@ interface StatGridProps {
 }
 
 function StatGrid({
+  scope,
   poolSize,
   staffTotal,
   fillPercent,
@@ -598,7 +808,7 @@ function StatGrid({
       <div className="col-span-2 rounded-lg border bg-card px-4 py-3">
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Week progress
+            {scope === "month" ? "Month progress" : "Week progress"}
           </span>
           <span className="text-[11px] text-muted-foreground tabular-nums">
             {assigned} / {demand} shifts
@@ -627,13 +837,19 @@ function StatGrid({
 
       <StatTile label="Pool" value={poolSize} sublabel={`of ${staffTotal}`} />
       <StatTile
-        label="Pending"
+        label={scope === "month" ? "Unfilled" : "Pending"}
         value={pending}
-        sublabel={pending === 0 ? "—" : "awaiting reply"}
+        sublabel={
+          pending === 0
+            ? "—"
+            : scope === "month"
+              ? "people-slots"
+              : "awaiting reply"
+        }
         tone={pending > 0 ? "amber" : undefined}
       />
       <StatTile
-        label="Confirmed"
+        label={scope === "month" ? "Assigned" : "Confirmed"}
         value={confirmed}
         sublabel="shifts"
         tone={confirmed > 0 ? "emerald" : undefined}

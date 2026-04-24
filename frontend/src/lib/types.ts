@@ -268,6 +268,21 @@ export interface AutogenSubmitResult {
   warnings: string[];
 }
 
+export interface MonthlyAutogenSubmitRequest {
+  year: number;
+  month: number;
+  employee_pool: string[];
+}
+
+export interface MonthlyAutogenSubmitResult {
+  year: number;
+  month: number;
+  entries_generated: number;
+  notifications_sent: number;
+  unfilled_slots: number;
+  warnings: string[];
+}
+
 export interface DemoConfig {
   demo_mode: boolean;
   confirmation_timeout_seconds: number;
@@ -338,6 +353,13 @@ export interface CommitDecision {
 
 export interface CommitDecisionsRequest {
   week_start: string;
+  employee_pool: string[];
+  decisions: CommitDecision[];
+}
+
+export interface CommitMonthlyDecisionsRequest {
+  year: number;
+  month: number;
   employee_pool: string[];
   decisions: CommitDecision[];
 }

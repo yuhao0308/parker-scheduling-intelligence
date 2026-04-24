@@ -238,3 +238,28 @@ class AutogenSubmitResult(BaseModel):
     notifications_sent: int
     unfilled_slots: int
     warnings: List[str]
+
+
+class MonthlyAutogenSubmitRequest(BaseModel):
+    year: int
+    month: int
+    employee_pool: List[str]
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "year": 2026,
+                "month": 4,
+                "employee_pool": ["RN001", "CNA007"],
+            }
+        }
+    )
+
+
+class MonthlyAutogenSubmitResult(BaseModel):
+    year: int
+    month: int
+    entries_generated: int
+    notifications_sent: int
+    unfilled_slots: int
+    warnings: List[str]

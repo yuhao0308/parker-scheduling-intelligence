@@ -3,7 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   autogenSubmit,
+  autogenSubmitMonth,
   commitDecisions,
+  commitMonthlyDecisions,
   generateSchedule,
   getAllActiveStaff,
   getCallout,
@@ -16,6 +18,7 @@ import {
   getWorkHoursSnapshot,
   listCalloutsByMonth,
   listConfirmations,
+  listMonthlyConfirmations,
   listOutreach,
   regenerateWeek,
   removeEntry,
@@ -34,7 +37,9 @@ import type {
   AutogenSubmitRequest,
   CalloutRequest,
   CommitDecisionsRequest,
+  CommitMonthlyDecisionsRequest,
   GenerateScheduleRequest,
+  MonthlyAutogenSubmitRequest,
   OverrideRequest,
   RegenerateWeekRequest,
   ReplaceEntryRequest,
@@ -181,6 +186,7 @@ export function useGenerateSchedule() {
     onSuccess: (_, req) => {
       qc.invalidateQueries({ queryKey: ["monthlySchedule", req.year, req.month] });
       qc.invalidateQueries({ queryKey: ["workHours", req.year, req.month] });
+      qc.invalidateQueries({ queryKey: ["confirmations"] });
     },
   });
 }
@@ -191,6 +197,19 @@ export function useConfirmations(weekStart: string, enabled = true) {
   return useQuery({
     queryKey: ["confirmations", weekStart],
     queryFn: () => listConfirmations(weekStart),
+    enabled,
+    staleTime: 5_000,
+  });
+}
+
+export function useMonthlyConfirmations(
+  year: number,
+  month: number,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["confirmations", "month", year, month],
+    queryFn: () => listMonthlyConfirmations(year, month),
     enabled,
     staleTime: 5_000,
   });
@@ -226,6 +245,19 @@ export function useCommitDecisions(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+    },
+  });
+}
+
+export function useCommitMonthlyDecisions(year: number, month: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: CommitMonthlyDecisionsRequest) =>
+      commitMonthlyDecisions(req),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["confirmations", "month", year, month] });
+      qc.invalidateQueries({ queryKey: ["monthlySchedule", year, month] });
+      qc.invalidateQueries({ queryKey: ["workHours", year, month] });
     },
   });
 }
@@ -282,6 +314,20 @@ export function useAutogenSubmit() {
     onSuccess: (_, req) => {
       qc.invalidateQueries({ queryKey: ["confirmations", req.week_start] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+    },
+  });
+}
+
+export function useAutogenSubmitMonth() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: MonthlyAutogenSubmitRequest) => autogenSubmitMonth(req),
+    onSuccess: (_, req) => {
+      qc.invalidateQueries({
+        queryKey: ["confirmations", "month", req.year, req.month],
+      });
+      qc.invalidateQueries({ queryKey: ["monthlySchedule", req.year, req.month] });
+      qc.invalidateQueries({ queryKey: ["workHours", req.year, req.month] });
     },
   });
 }

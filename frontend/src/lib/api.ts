@@ -6,10 +6,13 @@ import type {
   CalloutRequest,
   CommitDecisionsRequest,
   CommitDecisionsResult,
+  CommitMonthlyDecisionsRequest,
   ConfirmationList,
   DemoConfig,
   GenerateScheduleRequest,
   GenerateScheduleResult,
+  MonthlyAutogenSubmitRequest,
+  MonthlyAutogenSubmitResult,
   MonthlySchedule,
   OutreachNotification,
   OverrideRequest,
@@ -105,6 +108,9 @@ export const regenerateWeek = (req: RegenerateWeekRequest) =>
 export const autogenSubmit = (req: AutogenSubmitRequest) =>
   post<AutogenSubmitResult>("/schedule/autogen-submit", req);
 
+export const autogenSubmitMonth = (req: MonthlyAutogenSubmitRequest) =>
+  post<MonthlyAutogenSubmitResult>("/schedule/autogen-submit-month", req);
+
 // Demo / system config
 export const getDemoConfig = () => request<DemoConfig>("/config/demo");
 
@@ -124,6 +130,23 @@ export const listConfirmations = (weekStart: string, unitIds?: string[]) => {
   return request<ConfirmationList>(`/schedule/confirmations?${params.toString()}`);
 };
 
+export const listMonthlyConfirmations = (
+  year: number,
+  month: number,
+  unitIds?: string[],
+) => {
+  const params = new URLSearchParams({
+    year: String(year),
+    month: String(month),
+  });
+  if (unitIds?.length) {
+    for (const id of unitIds) params.append("unit_ids", id);
+  }
+  return request<ConfirmationList>(
+    `/schedule/confirmations/monthly?${params.toString()}`,
+  );
+};
+
 export const respondConfirmation = (
   entryId: number,
   req: RespondConfirmationRequest,
@@ -135,6 +158,9 @@ export const respondConfirmation = (
 
 export const commitDecisions = (req: CommitDecisionsRequest) =>
   post<CommitDecisionsResult>("/schedule/confirmations/commit", req);
+
+export const commitMonthlyDecisions = (req: CommitMonthlyDecisionsRequest) =>
+  post<CommitDecisionsResult>("/schedule/confirmations/commit-month", req);
 
 export const replaceEntry = (entryId: number, req: ReplaceEntryRequest) =>
   post<ReplaceEntryResult>(`/schedule/confirmations/${entryId}/replace`, req);

@@ -20,6 +20,12 @@ class SendConfirmationsRequest(BaseModel):
     unit_ids: Optional[List[str]] = None
 
 
+class SendMonthlyConfirmationsRequest(BaseModel):
+    year: int
+    month: int
+    unit_ids: Optional[List[str]] = None
+
+
 class StatusCounts(BaseModel):
     unsent: int = 0
     pending: int = 0
@@ -73,6 +79,13 @@ class CommitDecision(BaseModel):
 
 class CommitDecisionsRequest(BaseModel):
     week_start: date
+    employee_pool: List[str]
+    decisions: List[CommitDecision]
+
+
+class CommitMonthlyDecisionsRequest(BaseModel):
+    year: int
+    month: int
     employee_pool: List[str]
     decisions: List[CommitDecision]
 

@@ -28,12 +28,14 @@ from app.schemas.schedule import (
     WorkHoursSnapshotOut,
     GenerateScheduleRequest,
     MonthlyScheduleOut,
+    MonthlyAutogenSubmitRequest,
+    MonthlyAutogenSubmitResult,
     RegenerateWeekRequest,
     RegenerateWeekResult,
     ScheduleGenerationResult,
     ShiftSlotOut,
 )
-from app.services.confirmation import send_week_confirmations
+from app.services.confirmation import send_month_confirmations, send_week_confirmations
 from app.services.scheduler import generate_monthly_schedule, regenerate_week_schedule
 from app.services.staffing_requirements import slot_requirements
 from app.services.workload import build_work_hours_snapshot
@@ -267,6 +269,38 @@ async def autogen_submit(
         notifications_sent=sent.notifications_created,
         unfilled_slots=regen.unfilled_slots,
         warnings=regen.warnings,
+    )
+
+
+@router.post(
+    "/schedule/autogen-submit-month",
+    response_model=MonthlyAutogenSubmitResult,
+    summary="Generate the month AND immediately send confirmations",
+    description=(
+        "Monthly counterpart to the Auto-Gen weekly Submit button: generate a "
+        "fresh month from the selected pool, then mark new assignments PENDING "
+        "so the scheduler can Keep/Reopen/Finalize them in the same panel."
+    ),
+)
+async def autogen_submit_month(
+    req: MonthlyAutogenSubmitRequest,
+    db: AsyncSession = Depends(get_db),
+) -> MonthlyAutogenSubmitResult:
+    generated = await generate_monthly_schedule(
+        year=req.year,
+        month=req.month,
+        db=db,
+        settings=settings,
+        employee_pool=req.employee_pool,
+    )
+    sent = await send_month_confirmations(db, req.year, req.month, unit_ids=None)
+    return MonthlyAutogenSubmitResult(
+        year=req.year,
+        month=req.month,
+        entries_generated=generated.entries_created,
+        notifications_sent=sent.notifications_created,
+        unfilled_slots=generated.unfilled_slots,
+        warnings=generated.warnings,
     )
 
 

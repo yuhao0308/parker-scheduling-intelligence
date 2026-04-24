@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "backend",
-      "runtimeExecutable": "/Users/yuhaowang/Developer/parker-scheduling-intelligence/.venv/bin/python",
+      "runtimeExecutable": ".venv/bin/python",
       "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
       "port": 8000,
       "autoPort": false

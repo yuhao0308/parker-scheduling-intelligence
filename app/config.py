@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "postgresql+asyncpg://parker:parker@localhost:5432/parker_scheduling"
+    database_url: str = "postgresql+asyncpg://united_hebrew:united_hebrew@localhost:5432/united_hebrew_scheduling"
 
     # Ollama (local LLM)
     ollama_model: str = "qwen3:8b"

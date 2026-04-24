@@ -38,7 +38,7 @@ class InvalidStaffRecordError(ValueError):
 def _validate_employment_class(rec: StaffSyncRecord) -> None:
     """Enforce taxonomy invariants for staff classification.
 
-    Per Parker spec: LPNs are employed only on a full-time or part-time basis.
+    Per United Hebrew spec: LPNs are employed only on a full-time or part-time basis.
     RNs, CNAs, and PCTs may be per-diem; LPNs may not.
     """
     if (

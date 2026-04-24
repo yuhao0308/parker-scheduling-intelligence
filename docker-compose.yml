@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: parker
-      POSTGRES_PASSWORD: parker
-      POSTGRES_DB: parker_scheduling
+      POSTGRES_USER: united_hebrew
+      POSTGRES_PASSWORD: united_hebrew
+      POSTGRES_DB: united_hebrew_scheduling
     ports:
       - "5432:5432"
     volumes:
@@ -15,7 +15,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://parker:parker@db:5432/parker_scheduling
+      DATABASE_URL: postgresql+asyncpg://united_hebrew:united_hebrew@db:5432/united_hebrew_scheduling
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       OLLAMA_MODEL: "qwen3.5:9b"
       FACILITY_ZIP_CODE: "11375"

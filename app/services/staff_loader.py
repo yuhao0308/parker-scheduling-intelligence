@@ -139,7 +139,7 @@ async def load_unit_minimums(
 ) -> tuple[dict[str, int], dict[str, int]]:
     """Load per-unit regulatory minimums derived from typology.
 
-    Per Parker spec:
+    Per United Hebrew spec:
       - Long-Term units: >=1 licensed nurse per shift
       - Short-Term (SUBACUTE) units: >=2 licensed nurses per shift
       - Certified staff: ratio approx 1 CNA per 10 residents (baseline 4 CNAs

@@ -9,7 +9,7 @@ from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Inches, Pt
 
 
-OUT_PATH = Path("docs/parker_demo_minimalist_presentation.pptx")
+OUT_PATH = Path("docs/united_hebrew_demo_minimalist_presentation.pptx")
 
 BG = RGBColor(246, 244, 239)
 SURFACE = RGBColor(255, 255, 255)
@@ -165,7 +165,7 @@ def add_notes(slide, notes_text: str) -> None:
 def slide_1(prs: Presentation) -> None:
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     set_background(slide)
-    add_title(slide, "Parker Scheduling Intelligence", "Scheduler math and recommendation math, presented as an explainable intelligence layer")
+    add_title(slide, "United Hebrew Scheduling Intelligence", "Scheduler math and recommendation math, presented as an explainable intelligence layer")
     add_card(
         slide,
         Inches(0.82), Inches(1.78), Inches(3.7), Inches(3.05),

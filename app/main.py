@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Parker Scheduling Intelligence",
+    title="United Hebrew Scheduling Intelligence",
     version="0.1.0",
     lifespan=lifespan,
 )

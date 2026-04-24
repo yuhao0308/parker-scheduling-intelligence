@@ -7,7 +7,7 @@ from math import ceil
 
 from app.models.unit import ShiftLabel, Unit, UnitTypology
 
-# Current Parker demo demand shown in the monthly calendar and Auto-Gen panel.
+# Current United Hebrew demo demand shown in the monthly calendar and Auto-Gen panel.
 # Values represent total people required for the unit/shift, not just one bucket.
 UNIT_SHIFT_REQUIRED: dict[str, dict[str, int]] = {
     "U-SA1": {"DAY": 5, "EVENING": 5, "NIGHT": 4},
@@ -49,7 +49,7 @@ def _derived_certified_required(unit: Unit, shift_label: ShiftLabel | str) -> in
         return None
 
     # Night shifts can run one certified staff lighter than day/evening while
-    # preserving the Parker staffing pattern used in the demo calendar.
+    # preserving the United Hebrew staffing pattern used in the demo calendar.
     base = max(0, ceil(float(unit.required_ratio)))
     if _shift_key(shift_label) == "NIGHT":
         return max(0, base - 1)

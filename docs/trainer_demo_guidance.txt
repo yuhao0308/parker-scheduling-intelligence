@@ -1,4 +1,4 @@
-PARKER SCHEDULING INTELLIGENCE
+UNITED HEBREW SCHEDULING INTELLIGENCE
 Trainer Demo Guidance and Q&A Script
 Prepared: April 15, 2026
 
@@ -74,7 +74,7 @@ What the current demo does not fully claim yet:
 - fully automated leave-request impact planning inside the monthly generator
 - automated staff outreach or notifications
 - a self-training model that continuously retrains from historical data
-- full production integration into Parker's live scheduling platform
+- full production integration into United Hebrew's live scheduling platform
 
 Safe wording:
 
@@ -114,7 +114,7 @@ Use this as your opening answer when asked:
 
 Suggested script:
 
-"This demo is for Parker Scheduling Intelligence, which is designed to help scheduling teams make staffing decisions faster, more consistently, and with clearer reasoning."
+"This demo is for United Hebrew Scheduling Intelligence, which is designed to help scheduling teams make staffing decisions faster, more consistently, and with clearer reasoning."
 
 "There are two main business problems we are addressing. The first is monthly schedule generation, where the system helps build coverage across the month while respecting staffing constraints. The second is same-day call-out replacement, where the system quickly ranks the best replacement candidates when someone becomes unavailable."
 
@@ -214,7 +214,7 @@ The weekly caps in the current demo are:
 - part-time: up to 24.75 hours
 - per diem: up to 41.25 hours
 
-The rest-window logic is based on Parker's operational day, which runs from 11:00 PM to 11:00 PM, not midnight to midnight.
+The rest-window logic is based on United Hebrew's operational day, which runs from 11:00 PM to 11:00 PM, not midnight to midnight.
 
 That matters especially for Night shift, because a Night shift starting at 11:00 PM is treated as part of the next operational day.
 
@@ -590,7 +590,7 @@ Current configured weights:
 
 The important message is:
 
-"Overtime is weighted highest because that is the strongest financial and operational pressure Parker identified. Clinical fit is next because we still need the right people in the right places. The rest of the signals help break ties and improve quality."
+"Overtime is weighted highest because that is the strongest financial and operational pressure United Hebrew identified. Clinical fit is next because we still need the right people in the right places. The rest of the signals help break ties and improve quality."
 
 13.6 What each scoring dimension means
 
@@ -675,7 +675,7 @@ This is an important governance and compliance feature because it preserves huma
 
 13.10 Safe summary line
 
-"So the recommendation engine first eliminates unsafe options, then ranks the valid ones by Parker's operational priorities, and finally explains the result so the coordinator can make the final call."
+"So the recommendation engine first eliminates unsafe options, then ranks the valid ones by United Hebrew's operational priorities, and finally explains the result so the coordinator can make the final call."
 
 13.11 Recommendation engine exact score formula
 
@@ -1040,19 +1040,19 @@ Smooth transition sentence:
 
 You can use this nearly word for word.
 
-"This demo shows Parker Scheduling Intelligence, which is designed to support faster and more consistent staffing decisions. We are focusing on two business problems: monthly schedule generation and same-day call-out replacement."
+"This demo shows United Hebrew Scheduling Intelligence, which is designed to support faster and more consistent staffing decisions. We are focusing on two business problems: monthly schedule generation and same-day call-out replacement."
 
 "On the monthly schedule side, the system generates assignments across the month using the current database state, available staff, licensing rules, employment class, unit fit, and overtime-aware logic. Green means assigned, yellow means unassigned, and red means a call-out or urgent replacement need."
 
 "The monthly engine processes the schedule day by day, unit by unit, and shift by shift. For each open slot, it first removes ineligible people, then scores the valid candidates using signals like overtime headroom, clinical fit, and float penalty, and assigns the strongest fit. If no safe option exists, the gap stays visible rather than being hidden with a bad assignment."
 
-"For same-day replacement, the second engine begins when someone calls out. It identifies the required license bucket, removes anyone who is not eligible, such as people already scheduled, on PTO, excluded from the unit, or blocked by rest-window rules, and then ranks the remaining staff using Parker's priorities."
+"For same-day replacement, the second engine begins when someone calls out. It identifies the required license bucket, removes anyone who is not eligible, such as people already scheduled, on PTO, excluded from the unit, or blocked by rest-window rules, and then ranks the remaining staff using United Hebrew's priorities."
 
 "The most important scoring factor is overtime headroom, followed by clinical fit. Additional signals include float penalty, seniority, proximity, equity, and a low-weight willingness signal. The result is a ranked list with transparent explanations, so the coordinator can see not just who is recommended, but why."
 
 "The coordinator remains in control. If they take the top recommendation, the decision is logged. If they choose someone else, the system asks for an override reason so the process remains explainable and traceable."
 
-"So the value of the demo is not just automation. It is explainable staffing intelligence that helps Parker move faster, reduce avoidable overtime, and make more defensible decisions under real operating constraints."
+"So the value of the demo is not just automation. It is explainable staffing intelligence that helps United Hebrew move faster, reduce avoidable overtime, and make more defensible decisions under real operating constraints."
 
 
 ==================================================
@@ -1131,13 +1131,13 @@ Answer:
 Q12. Can the ranking priorities be changed?
 
 Answer:
-"Yes. The scoring weights are configurable. If Parker decides that a certain factor should matter more or less, those weights can be adjusted."
+"Yes. The scoring weights are configurable. If United Hebrew decides that a certain factor should matter more or less, those weights can be adjusted."
 
 
 Q13. Does proximity matter a lot?
 
 Answer:
-"It matters, but only lightly in the current configuration. It is mainly a tiebreaker. Parker's larger priorities are overtime control and clinical fit."
+"It matters, but only lightly in the current configuration. It is mainly a tiebreaker. United Hebrew's larger priorities are overtime control and clinical fit."
 
 
 Q14. What data does the system need?
@@ -1170,7 +1170,7 @@ Answer:
 "Because it reduces memory-based decision making, applies the same rules consistently every time, surfaces better options faster, and explains the reasoning instead of depending on whoever happens to be on shift."
 
 
-Q19. Can this work with Parker's existing scheduling system?
+Q19. Can this work with United Hebrew's existing scheduling system?
 
 Answer:
 "That is the intended direction. The current demo is positioned as an intelligence layer that works alongside the existing scheduling workflow rather than replacing it outright."
@@ -1215,14 +1215,14 @@ Say:
 21. SHORT VERSION IF YOU NEED A 2-MINUTE SUMMARY
 ==================================================
 
-"This demo shows Parker Scheduling Intelligence solving two staffing problems: monthly schedule generation and same-day call-out replacement. The system uses explainable AI-assisted logic, not a black box. It first applies hard staffing rules, then ranks valid options using configurable priorities such as overtime headroom, clinical fit, and float impact. The result is faster staffing decisions, better overtime control, and a clear explanation of why each recommendation appears. The scheduler stays in control, and overrides are logged for accountability."
+"This demo shows United Hebrew Scheduling Intelligence solving two staffing problems: monthly schedule generation and same-day call-out replacement. The system uses explainable AI-assisted logic, not a black box. It first applies hard staffing rules, then ranks valid options using configurable priorities such as overtime headroom, clinical fit, and float impact. The result is faster staffing decisions, better overtime control, and a clear explanation of why each recommendation appears. The scheduler stays in control, and overrides are logged for accountability."
 
 
 ==================================================
 22. FINAL CLOSING SCRIPT
 ==================================================
 
-"To summarize, this demo shows that we can build an explainable scheduling intelligence layer that helps Parker generate monthly coverage more efficiently and respond to call-outs more effectively."
+"To summarize, this demo shows that we can build an explainable scheduling intelligence layer that helps United Hebrew generate monthly coverage more efficiently and respond to call-outs more effectively."
 
 "The current phase is intentionally focused on the operational logic first: who is eligible, who is the best fit, how overtime is controlled, and how recommendations are explained."
 

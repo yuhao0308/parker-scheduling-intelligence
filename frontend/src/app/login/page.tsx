@@ -7,8 +7,8 @@ import { setDemoAuthenticated } from "@/components/app-shell";
 // Demo-only credentials. The POC has no real authentication backend; this
 // gate exists so the demo flow matches the supervisor expectation of a login
 // before the schedule view. Swap for a real auth flow before production.
-const DEMO_EMAIL = "admin@parker.demo";
-const DEMO_PASSWORD = "parker2026";
+const DEMO_EMAIL = "admin@unitedhebrew.demo";
+const DEMO_PASSWORD = "unitedhebrew2026";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -56,8 +56,8 @@ export default function LoginPage() {
             </svg>
           </div>
           <div className="leading-tight">
-            <div className="text-sm font-bold tracking-wider text-slate-900">
-              PARKER
+            <div className="text-xs font-bold tracking-wider text-slate-900">
+              UNITED HEBREW
             </div>
             <div className="text-[11px] text-slate-600">
               Scheduling Intelligence
@@ -72,7 +72,7 @@ export default function LoginPage() {
         </div>
         {/* Copyright */}
         <div className="absolute bottom-3 left-6 text-[11px] text-white/70">
-          Copyright © 2026 Parker &nbsp;|&nbsp; All rights reserved
+          Copyright © 2026 United Hebrew &nbsp;|&nbsp; All rights reserved
         </div>
       </div>
 
@@ -84,7 +84,7 @@ export default function LoginPage() {
           aria-label="Login form"
         >
           <h1 className="text-xl font-bold text-slate-900">
-            Login into your account
+            Log in to your account
           </h1>
 
           <div className="space-y-1.5">
@@ -100,7 +100,7 @@ export default function LoginPage() {
               autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="example @email.com"
+              placeholder="example@email.com"
               className="w-full rounded border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
               required
             />

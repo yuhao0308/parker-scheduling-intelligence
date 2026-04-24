@@ -1,5 +1,5 @@
 [project]
-name = "parker-scheduling-intelligence"
+name = "united-hebrew-scheduling-intelligence"
 version = "0.1.0"
 description = "Decision-support tool for same-day call-out replacement in healthcare scheduling"
 requires-python = ">=3.9"

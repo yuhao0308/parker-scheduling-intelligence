@@ -1,10 +1,10 @@
 ---
-name: Parker POC Context
-description: Decision-support tool for same-day call-out replacement at Parker healthcare facilities
+name: United Hebrew POC Context
+description: Decision-support tool for same-day call-out replacement at United Hebrew healthcare facilities
 type: project
 ---
 
-Parker Scheduling Intelligence is a POC for a nursing home staffing system with two AI components:
+United Hebrew Scheduling Intelligence is a POC for a nursing home staffing system with two AI components:
 1. **Monthly auto-scheduler** — generates a full month's schedule considering licenses, FT/PT hours, workload balance
 2. **Call-out replacement recommender** — when someone calls out, ranks candidates by fitness
 

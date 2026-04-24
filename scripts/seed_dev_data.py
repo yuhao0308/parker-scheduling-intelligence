@@ -1,4 +1,4 @@
-"""Seed the database with realistic Parker test data.
+"""Seed the database with realistic United Hebrew test data.
 
 Creates 12 units (4 subacute, 8 LT), a full-staff roster sized to cover the
 current calendar demand, 1 month of schedule, hours ledger entries, callouts,
@@ -94,7 +94,7 @@ GENERATED_FIRST_NAMES = [
     "Maya",
     "Nolan",
     "Olivia",
-    "Parker",
+    "Paige",
     "Quinn",
     "Rafael",
     "Sienna",

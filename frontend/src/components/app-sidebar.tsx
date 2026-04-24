@@ -17,7 +17,7 @@ export function AppSidebar() {
   return (
     <aside className="w-56 border-r bg-sidebar text-sidebar-foreground flex flex-col min-h-screen">
       <div className="p-4 border-b">
-        <h1 className="text-lg font-bold tracking-tight">Parker</h1>
+        <h1 className="text-lg font-bold tracking-tight">United Hebrew</h1>
         <p className="text-xs text-muted-foreground">Scheduling Intelligence</p>
       </div>
       <nav className="flex-1 p-2 space-y-1">

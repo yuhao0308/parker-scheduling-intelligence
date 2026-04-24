@@ -1,8 +1,8 @@
-# Parker Scheduling Intelligence — Business Overview
+# United Hebrew Scheduling Intelligence — Business Overview
 
 ## What It Does
 
-Parker Scheduling Intelligence is an automated staffing system designed for skilled nursing facilities. It handles two core problems that coordinators face every day:
+United Hebrew Scheduling Intelligence is an automated staffing system designed for skilled nursing facilities. It handles two core problems that coordinators face every day:
 
 1. **Monthly Schedule Generation** — Automatically builds a full month of shift assignments, making sure every unit is covered while respecting staff licenses, work hours, and experience.
 2. **Emergency Call-Out Replacement** — When an employee calls out sick on the day of their shift, the system instantly ranks the best available replacements and explains why each one is a good fit.
@@ -95,7 +95,7 @@ The system works with data that nursing facilities already track:
 - **Callout records** — When someone calls out, which unit and shift
 - **Unit information** — Unit names, types (subacute vs. long-term), active status
 
-All data syncs from the facility's existing scheduling system. Parker does not replace their system — it sits on top of it.
+All data is synced from the facility's existing scheduling system. United Hebrew does not replace that system — it sits on top of it.
 
 ---
 
@@ -106,7 +106,7 @@ All data syncs from the facility's existing scheduling system. Parker does not r
 3. **Ensures compliance** — License requirements, rest windows, and unit exclusions are enforced automatically
 4. **Fair workload distribution** — Everyone gets their minimum hours before anyone gets extra shifts
 5. **Transparent decisions** — Every recommendation comes with a plain-English explanation; no black box
-6. **Handles emergencies fast** — Day-of callouts get ranked replacements in seconds, not phone calls
+6. **Handles emergencies fast** — Day-of call-outs get ranked replacements in seconds, instead of a chain of phone calls
 
 ---
 
@@ -114,4 +114,4 @@ All data syncs from the facility's existing scheduling system. Parker does not r
 
 - **Leave request integration** — Staff submit leave forms through the app; the system evaluates scheduling impact before approval and shows the coordinator exactly what changes when leave is granted
 - **Multi-facility support** — Extend scheduling across multiple facility locations
-- **Predictive callout modeling** — Use historical patterns to predict which shifts are likely to have callouts and pre-position backup coverage
+- **Predictive call-out modeling** — Use historical patterns to predict which shifts are likely to have call-outs and pre-position backup coverage

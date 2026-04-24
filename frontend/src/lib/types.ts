@@ -11,7 +11,7 @@ export interface ScoreBreakdown {
 }
 
 // Client-facing typology labels. The DB enum is LT/SUBACUTE (clinical terms),
-// but Parker staff say "Long-Term" / "Short-Term" — always render via this map.
+// but United Hebrew staff say "Long-Term" / "Short-Term" — always render via this map.
 export const TYPOLOGY_LABEL: Record<string, string> = {
   LT: "Long-Term",
   SUBACUTE: "Short-Term",

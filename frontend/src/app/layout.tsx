@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Parker Scheduling Intelligence",
+  title: "United Hebrew Scheduling Intelligence",
   description: "Same-day call-out replacement decision support",
 };
 

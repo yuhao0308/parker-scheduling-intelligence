@@ -1,6 +1,6 @@
-"""Shift time math for Parker's operational day and shift windows.
+"""Shift time math for United Hebrew's operational day and shift windows.
 
-Parker's operational day starts at 11PM (23:00), not midnight.
+United Hebrew's operational day starts at 11PM (23:00), not midnight.
 The NIGHT shift (23:00–07:15) is the FIRST shift of the operational day.
 
 Shift structure:
@@ -17,7 +17,7 @@ from datetime import date, datetime, time, timedelta
 
 from app.schemas.common import ShiftLabel
 
-# Parker's operational day boundary
+# United Hebrew's operational day boundary
 OPERATIONAL_DAY_START = time(23, 0)
 
 # Shift windows

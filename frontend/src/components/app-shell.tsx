@@ -6,7 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { WorkHoursMonitor } from "@/components/work-hours-monitor";
 
 const AUTH_STORAGE_KEY = "demo_auth";
-const AUTH_EVENT = "parker:auth-change";
+const AUTH_EVENT = "united-hebrew:auth-change";
 
 export function isDemoAuthenticated(): boolean {
   if (typeof window === "undefined") return false;

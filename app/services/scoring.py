@@ -4,7 +4,7 @@ score(c) = w1*overtime_headroom + w2*clinical_fit
            - w3*float_penalty + w4*proximity
 
 Weight priority: w1 >> w2 > w3 >> w4
-Overtime dominates per client guidance ("top of the priority" — Sean @ Parker).
+Overtime dominates per client guidance ("top of the priority" — Sean @ United Hebrew).
 Proximity is retained only as a tiebreaker; it was never client-confirmed.
 """
 

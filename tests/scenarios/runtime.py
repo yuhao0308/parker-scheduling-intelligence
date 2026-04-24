@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from collections import Counter
 from contextlib import asynccontextmanager, contextmanager
@@ -10,6 +11,7 @@ from typing import Any, AsyncIterator, Optional, Tuple, Union
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import app.db.session as db_session
 from app.db.session import get_db
 from app.main import app
 from app.models.base import Base
@@ -76,6 +78,12 @@ async def _scenario_environment() -> AsyncIterator[Tuple[AsyncClient, async_sess
 
         app.dependency_overrides[get_db] = override_get_db
 
+        # The POST /callouts background task opens its own session via
+        # db_session.async_session_factory — redirect that at the SQLite
+        # factory so tests don't hit the production Postgres pool.
+        original_factory = db_session.async_session_factory
+        db_session.async_session_factory = session_factory
+
         try:
             with _stub_rationales():
                 async with AsyncClient(
@@ -85,6 +93,7 @@ async def _scenario_environment() -> AsyncIterator[Tuple[AsyncClient, async_sess
                     yield client, session_factory
         finally:
             app.dependency_overrides.pop(get_db, None)
+            db_session.async_session_factory = original_factory
             await engine.dispose()
 
 
@@ -184,7 +193,26 @@ async def _execute_action(
                 json=action.request.model_dump(mode="json"),
             )
             response.raise_for_status()
-            return {"callout": response.json()}, None
+            job = response.json()
+
+            # Poll the background job until it terminates. The pipeline
+            # runs in-process via asyncio.create_task; a handful of
+            # short sleeps is plenty for the scenario fixtures.
+            callout_id = job.get("callout_id")
+            deadline_iters = 200  # ~10s at 50ms each
+            for _ in range(deadline_iters):
+                status = job.get("status")
+                if status in ("COMPLETED", "FAILED"):
+                    break
+                await asyncio.sleep(0.05)
+                poll = await client.get(f"/callouts/{callout_id}")
+                poll.raise_for_status()
+                job = poll.json()
+            if job.get("status") == "FAILED":
+                raise RuntimeError(
+                    f"Callout job failed: {job.get('error_message') or 'unknown error'}"
+                )
+            return {"callout": job}, None
 
         response = await client.post(
             "/schedule/generate",

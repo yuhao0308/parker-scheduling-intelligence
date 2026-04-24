@@ -2,8 +2,8 @@ import type {
   AutogenSubmitRequest,
   AutogenSubmitResult,
   CalloutDayCount,
+  CalloutJobResponse,
   CalloutRequest,
-  CalloutResponse,
   CommitDecisionsRequest,
   CommitDecisionsResult,
   ConfirmationList,
@@ -71,7 +71,10 @@ export const getStaffForUnit = (unitId: string) =>
 export const getAllActiveStaff = () => request<StaffOut[]>("/staff");
 
 export const submitCallout = (req: CalloutRequest) =>
-  post<CalloutResponse>("/callouts", req);
+  post<CalloutJobResponse>("/callouts", req);
+
+export const getCallout = (id: number) =>
+  request<CalloutJobResponse>(`/callouts/${id}`);
 
 export const submitOverride = (req: OverrideRequest) =>
   post<OverrideResponse>("/overrides", req);

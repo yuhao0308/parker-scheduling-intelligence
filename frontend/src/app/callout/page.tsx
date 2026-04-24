@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -9,17 +9,20 @@ import { CalloutForm } from "@/components/callout-form";
 import { CandidateList } from "@/components/candidate-list";
 import { FilterStatsBadge } from "@/components/filter-stats-badge";
 import { OutreachConsole } from "@/components/callout/outreach-console";
-import { useSendOutreach, useSubmitCallout } from "@/lib/queries";
+import { useCalloutJob, useSendOutreach, useSubmitCallout } from "@/lib/queries";
 import {
   AlertCircle,
   CheckCircle2,
+  Loader2,
   Plus,
+  RotateCcw,
   User,
   UserX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
   CalledOutEmployee,
+  CalloutJobResponse,
   CalloutRequest,
   CalloutResponse,
   ScoredCandidate,
@@ -32,6 +35,35 @@ const licenseBadgeClass: Record<string, string> = {
   CNA: "bg-amber-100 text-amber-800 border-amber-200",
   PCT: "bg-purple-100 text-purple-800 border-purple-200",
 };
+
+// Separate from React Query cache: survives full page reloads and
+// top-nav clicks that re-mount this route.
+const ACTIVE_JOB_STORAGE_KEY = "callout:activeJobId";
+
+function readStoredJobId(): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredJobId(id: number | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (id === null) {
+      window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+    } else {
+      window.localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, String(id));
+    }
+  } catch {
+    // Ignore quota / privacy-mode errors — the URL is still authoritative.
+  }
+}
 
 function tenureLabel(hireDate: string | null): string | null {
   if (!hireDate) return null;
@@ -207,6 +239,96 @@ function SuccessCard({
   );
 }
 
+/* ── Finding-replacements spinner view ──────────────────────────────────── */
+
+function FindingReplacementsView({
+  job,
+  onCancel,
+}: {
+  job: CalloutJobResponse;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold">
+            Finding replacements for {job.unit_name}
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {job.shift_label} shift · {job.shift_date}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" className="shrink-0 gap-2" onClick={onCancel}>
+          <Plus className="h-3.5 w-3.5" />
+          New Call-Out
+        </Button>
+      </div>
+
+      <CalledOutEmployeeCard employee={job.called_out_employee} />
+
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border bg-card py-16 text-center shadow-sm">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="space-y-1">
+          <p className="text-base font-medium">Scoring candidates…</p>
+          <p className="text-sm text-muted-foreground">
+            You can navigate away — this page will pick up where it left off.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Failed job view ────────────────────────────────────────────────────── */
+
+function FailedJobView({
+  job,
+  onRetry,
+  onReset,
+}: {
+  job: CalloutJobResponse;
+  onRetry: () => void;
+  onReset: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-lg font-semibold">
+            Couldn&apos;t find replacements for {job.unit_name}
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            {job.shift_label} shift · {job.shift_date}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" className="shrink-0 gap-2" onClick={onReset}>
+          <Plus className="h-3.5 w-3.5" />
+          New Call-Out
+        </Button>
+      </div>
+
+      <CalledOutEmployeeCard employee={job.called_out_employee} />
+
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-destructive/50 bg-destructive/5 py-12 text-center shadow-sm">
+        <AlertCircle className="h-8 w-8 text-destructive" />
+        <div className="space-y-1">
+          <p className="text-base font-medium text-destructive">
+            Recommendation pipeline failed
+          </p>
+          <p className="text-sm text-muted-foreground max-w-md">
+            {job.error_message ?? "An unknown error occurred."}
+          </p>
+        </div>
+        <Button className="mt-2 gap-2" onClick={onRetry}>
+          <RotateCcw className="h-4 w-4" />
+          Try Again
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Results view ───────────────────────────────────────────────────────── */
 
 interface ResultsViewProps {
@@ -287,10 +409,52 @@ function ResultsView({
   );
 }
 
+/* ── Job → legacy result projection ─────────────────────────────────────── */
+
+export function jobToResult(job: CalloutJobResponse): CalloutResponse | null {
+  if (
+    job.status !== "COMPLETED" ||
+    job.recommendation_log_id == null ||
+    job.candidates == null ||
+    job.filter_stats == null ||
+    job.generated_at == null
+  ) {
+    return null;
+  }
+  return {
+    callout_id: job.callout_id,
+    recommendation_log_id: job.recommendation_log_id,
+    unit_id: job.unit_id,
+    unit_name: job.unit_name,
+    shift_date: job.shift_date,
+    shift_label: job.shift_label,
+    called_out_employee: job.called_out_employee,
+    candidates: job.candidates,
+    filter_stats: job.filter_stats,
+    generated_at: job.generated_at,
+  };
+}
+
 /* ── Main page ──────────────────────────────────────────────────────────── */
 
 function CalloutPageInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
+
+  const calloutIdParam = useMemo(() => {
+    const raw = searchParams.get("callout_id");
+    if (!raw) return null;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [searchParams]);
+
+  const [calloutId, setCalloutId] = useState<number | null>(calloutIdParam);
+
+  // Keep the internal id in sync when the URL changes underneath us
+  // (e.g. browser back/forward).
+  useEffect(() => {
+    setCalloutId(calloutIdParam);
+  }, [calloutIdParam]);
 
   const initialValues = useMemo(() => {
     const date = searchParams.get("date") ?? undefined;
@@ -304,16 +468,78 @@ function CalloutPageInner() {
   }, [searchParams]);
 
   const [coordinatorId, setCoordinatorId] = useState("");
-  const [result, setResult] = useState<CalloutResponse | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [lastRequest, setLastRequest] = useState<CalloutRequest | null>(null);
 
   const calloutMutation = useSubmitCallout();
   const sendOutreachMutation = useSendOutreach();
 
+  const setCalloutIdInUrl = useCallback(
+    (id: number | null) => {
+      setCalloutId(id);
+      writeStoredJobId(id);
+
+      const params = new URLSearchParams(searchParams.toString());
+      if (id === null) {
+        params.delete("callout_id");
+      } else {
+        params.set("callout_id", String(id));
+      }
+      const query = params.toString();
+      router.replace(query ? `/callout?${query}` : "/callout", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  // On mount, if the URL has no callout_id but localStorage does (e.g. the
+  // user top-nav'd to Schedule and came back), hydrate from storage so
+  // the polling query wakes up.
+  useEffect(() => {
+    if (calloutIdParam !== null) return;
+    const stored = readStoredJobId();
+    if (stored !== null) {
+      setCalloutIdInUrl(stored);
+    }
+    // Mount-only hydration. Subsequent changes flow through the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const jobQuery = useCalloutJob(calloutId);
+  const job = jobQuery.data ?? null;
+
+  // If the stored id 404s (DB wipe / staler than the server), clear it
+  // so the user doesn't stare at a restoring-spinner forever.
+  useEffect(() => {
+    if (jobQuery.isError && calloutId !== null) {
+      setCalloutIdInUrl(null);
+    }
+  }, [jobQuery.isError, calloutId, setCalloutIdInUrl]);
+
+  const result = job ? jobToResult(job) : null;
+
   const step: 1 | 2 | 3 = submitted ? 3 : result ? 2 : 1;
 
   function handleCalloutSubmit(req: CalloutRequest) {
-    calloutMutation.mutate(req, { onSuccess: (data) => setResult(data) });
+    setLastRequest(req);
+    calloutMutation.mutate(req, {
+      onSuccess: (data) => {
+        setCalloutIdInUrl(data.callout_id);
+      },
+    });
+  }
+
+  function handleRetry() {
+    if (!lastRequest) {
+      handleReset();
+      return;
+    }
+    // Clear the old job id first so the Restoring spinner doesn't flash.
+    setCalloutIdInUrl(null);
+    calloutMutation.mutate(lastRequest, {
+      onSuccess: (data) => {
+        setCalloutIdInUrl(data.callout_id);
+      },
+    });
   }
 
   function handleSelect(candidate: ScoredCandidate) {
@@ -329,11 +555,15 @@ function CalloutPageInner() {
   }
 
   function handleReset() {
-    setResult(null);
     setSubmitted(false);
+    setLastRequest(null);
     calloutMutation.reset();
     sendOutreachMutation.reset();
+    setCalloutIdInUrl(null);
   }
+
+  const isRestoring =
+    calloutId !== null && jobQuery.isLoading && !jobQuery.data;
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -372,6 +602,15 @@ function CalloutPageInner() {
           shiftLabel={result?.shift_label}
           shiftDate={result?.shift_date}
         />
+      ) : isRestoring ? (
+        <div className="flex flex-col items-center justify-center gap-3 rounded-xl border bg-card py-16 text-center shadow-sm">
+          <Loader2 className="h-7 w-7 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Restoring call-out…</p>
+        </div>
+      ) : job && (job.status === "PENDING" || job.status === "RUNNING") ? (
+        <FindingReplacementsView job={job} onCancel={handleReset} />
+      ) : job && job.status === "FAILED" ? (
+        <FailedJobView job={job} onRetry={handleRetry} onReset={handleReset} />
       ) : !result ? (
         <>
           <CalloutForm

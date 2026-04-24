@@ -10,10 +10,22 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AlertCircle, Loader2, RotateCcw } from "lucide-react";
 import { CandidateList } from "./candidate-list";
 import { OverrideDialog } from "./override-dialog";
-import { useSubmitCallout, useSubmitOverride } from "@/lib/queries";
-import type { CalloutResponse, ShiftSlot, ScoredCandidate, ShiftSlotStatus } from "@/lib/types";
+import {
+  useCalloutJob,
+  useSubmitCallout,
+  useSubmitOverride,
+} from "@/lib/queries";
+import { jobToResult } from "@/app/callout/page";
+import type {
+  CalloutJobResponse,
+  CalloutResponse,
+  ScoredCandidate,
+  ShiftSlot,
+  ShiftSlotStatus,
+} from "@/lib/types";
 
 interface ShiftDetailDialogProps {
   slots: ShiftSlot[];
@@ -32,17 +44,22 @@ export function ShiftDetailDialog({
   open,
   onOpenChange,
 }: ShiftDetailDialogProps) {
-  const [result, setResult] = useState<CalloutResponse | null>(null);
+  // Track the active background job id rather than caching the full
+  // CalloutResponse — the page polls until it resolves.
+  const [calloutId, setCalloutId] = useState<number | null>(null);
   const [overrideCandidate, setOverrideCandidate] = useState<ScoredCandidate | null>(null);
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   const calloutMutation = useSubmitCallout();
   const overrideMutation = useSubmitOverride();
+  const jobQuery = useCalloutJob(calloutId);
+  const job: CalloutJobResponse | null = jobQuery.data ?? null;
+  const result: CalloutResponse | null = job ? jobToResult(job) : null;
 
   function handleClose(val: boolean) {
     if (!val) {
-      setResult(null);
+      setCalloutId(null);
       setSubmitted(false);
       setOverrideCandidate(null);
       calloutMutation.reset();
@@ -66,8 +83,13 @@ export function ShiftDetailDialog({
         shift_date: slot.shift_date,
         shift_label: slot.shift_label,
       },
-      { onSuccess: (data) => setResult(data) },
+      { onSuccess: (data) => setCalloutId(data.callout_id) },
     );
+  }
+
+  function handleRetry() {
+    setCalloutId(null);
+    handleGetRecommendations();
   }
 
   function handleSelect(candidate: ScoredCandidate) {
@@ -133,6 +155,10 @@ export function ShiftDetailDialog({
     ? `All Units — ${first.shift_label} Shift`
     : `${first.unit_name} — ${first.shift_label} Shift`;
 
+  const isJobRunning =
+    job !== null && (job.status === "PENDING" || job.status === "RUNNING");
+  const isJobFailed = job !== null && job.status === "FAILED";
+
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
@@ -186,6 +212,24 @@ export function ShiftDetailDialog({
               <p className="text-sm text-muted-foreground">
                 The replacement has been recorded.
               </p>
+            </div>
+          ) : isJobRunning ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <Loader2 className="h-7 w-7 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">
+                Scoring candidates…
+              </p>
+            </div>
+          ) : isJobFailed ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <AlertCircle className="h-7 w-7 text-destructive" />
+              <p className="text-sm text-destructive max-w-sm">
+                {job?.error_message ?? "Recommendation pipeline failed."}
+              </p>
+              <Button size="sm" className="gap-2" onClick={handleRetry}>
+                <RotateCcw className="h-3.5 w-3.5" />
+                Try Again
+              </Button>
             </div>
           ) : result ? (
             <div className="space-y-3">

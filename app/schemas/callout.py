@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import enum
 from datetime import date, datetime
+from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
 from app.schemas.candidate import FilterStats, ScoredCandidate
 from app.schemas.common import EmploymentClass, LicenseType, ShiftLabel
+
+
+class CalloutJobStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 
 class HITLFeedbackTag(str, enum.Enum):
@@ -136,6 +144,29 @@ class OverrideResponse(BaseModel):
     selected_rank: Optional[int]
     writeback_status: Optional[str] = None
     writeback_detail: Optional[str] = None
+
+
+class CalloutJobResponse(BaseModel):
+    """Polling-friendly shape for the background recommendation pipeline.
+
+    POST /callouts returns this immediately with status=RUNNING. Clients
+    poll GET /callouts/{id} until status is COMPLETED (carrying the
+    ranked candidates + filter stats) or FAILED (carrying error_message).
+    """
+
+    callout_id: int
+    status: CalloutJobStatus
+    unit_id: str
+    unit_name: str
+    shift_date: date
+    shift_label: ShiftLabel
+    called_out_employee: Optional[CalledOutEmployee] = None
+    reported_at: datetime
+    error_message: Optional[str] = None
+    recommendation_log_id: Optional[int] = None
+    candidates: Optional[List[ScoredCandidate]] = None
+    filter_stats: Optional[FilterStats] = None
+    generated_at: Optional[datetime] = None
 
 
 class CalloutDayCount(BaseModel):

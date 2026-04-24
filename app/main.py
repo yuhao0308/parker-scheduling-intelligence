@@ -62,11 +62,14 @@ app = FastAPI(
 )
 
 app.include_router(health.router, tags=["health"])
+# lookup.router owns GET /callouts/recent; it must be registered BEFORE
+# callout.router so the literal path isn't shadowed by the dynamic
+# GET /callouts/{callout_id:int} added below.
+app.include_router(lookup.router)
 app.include_router(callout.router)
 app.include_router(overrides.router)
 app.include_router(sync.router)
 app.include_router(admin.router)
-app.include_router(lookup.router)
 app.include_router(schedule.router)
 app.include_router(confirmation.router)
 app.include_router(system.router)

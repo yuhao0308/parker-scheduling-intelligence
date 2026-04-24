@@ -21,7 +21,7 @@ from app.models.notification import (
     SimulatedNotification,
 )
 from app.models.recommendation import OverrideLog
-from app.models.schedule import Callout, ConfirmationStatus, ScheduleEntry
+from app.models.schedule import Callout, CalloutStatus, ConfirmationStatus, ScheduleEntry
 from app.models.staff import StaffMaster
 from app.models.unit import Unit
 from app.schemas.callout import CalloutRequest, CalloutResponse
@@ -223,6 +223,7 @@ async def respond_to_confirmation(
         shift_label=entry.shift_label,
         reason=f"schedule_decline:{response.value.lower()}",
         reported_at=now,
+        status=CalloutStatus.RUNNING,
     )
     db.add(callout)
     await db.flush()
@@ -239,6 +240,12 @@ async def respond_to_confirmation(
         db=db,
         settings=settings,
     )
+
+    # The synchronous decline-triggers-recommendation path runs the
+    # pipeline inline, so mark it COMPLETED immediately for consistency
+    # with the async POST /callouts flow.
+    callout.status = CalloutStatus.COMPLETED
+    callout.completed_at = datetime.now(timezone.utc)
 
     await db.commit()
     return RespondConfirmationResult(

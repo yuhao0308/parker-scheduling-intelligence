@@ -1,23 +1,36 @@
 from __future__ import annotations
 
+import asyncio
 import calendar as _calendar
 from datetime import date, datetime, timezone
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Query
+import structlog
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, settings
+from app.db import session as db_session
 from app.db.session import get_db
+from app.exceptions import AppError
 from app.models.notification import (
     NotificationKind,
     NotificationStatus,
     SimulatedNotification,
 )
-from app.models.schedule import Callout
+from app.models.recommendation import RecommendationLog
+from app.models.schedule import Callout, CalloutStatus
 from app.models.staff import StaffMaster
-from app.schemas.callout import CalloutDayCount, CalloutRequest, CalloutResponse
+from app.models.unit import Unit
+from app.schemas.callout import (
+    CalledOutEmployee,
+    CalloutDayCount,
+    CalloutJobResponse,
+    CalloutJobStatus,
+    CalloutRequest,
+)
+from app.schemas.candidate import FilterStats, ScoredCandidate
 from app.schemas.outreach import (
     OutreachNotificationOut,
     RespondOutreachRequest,
@@ -26,48 +39,74 @@ from app.schemas.outreach import (
     SendOutreachResult,
 )
 from app.services.outreach import respond_to_outreach, send_outreach
-from app.services.recommendation import generate_recommendations
+from app.services.recommendation import (
+    generate_recommendations,
+    load_called_out_employee,
+)
+
+logger = structlog.get_logger()
 
 router = APIRouter(tags=["callout"])
 
 DEMO_COORDINATOR_ID = "demo-scheduler"
 
+# Keep strong references to fire-and-forget background tasks so the GC
+# doesn't reap them mid-flight. Tasks remove themselves on completion.
+_background_jobs: set[asyncio.Task] = set()
+
 
 @router.post(
     "/callouts",
-    response_model=CalloutResponse,
-    summary="Report a callout and rank replacement candidates",
+    response_model=CalloutJobResponse,
+    summary="Report a callout and kick off replacement recommendations",
     description=(
-        "Creates a callout record, runs the recommendation pipeline, and returns "
-        "ranked candidates with scoring details and filter statistics."
+        "Persists the callout, spawns the recommendation pipeline as an "
+        "asyncio background task, and returns immediately with "
+        "status=RUNNING. Poll GET /callouts/{id} until COMPLETED/FAILED."
     ),
 )
 async def create_callout(
     request: CalloutRequest,
     db: AsyncSession = Depends(get_db),
-) -> CalloutResponse:
-    """Report a call-out and get ranked replacement candidates."""
-    # Create the callout record
+) -> CalloutJobResponse:
     callout = Callout(
         employee_id=request.callout_employee_id,
         unit_id=request.unit_id,
         shift_date=request.shift_date,
         shift_label=request.shift_label,
         reported_at=datetime.now(timezone.utc),
+        status=CalloutStatus.RUNNING,
     )
     db.add(callout)
-    await db.flush()  # get the callout ID
-
-    # Run the recommendation pipeline
-    response = await generate_recommendations(
-        callout=request,
-        callout_id=callout.id,
-        db=db,
-        settings=settings,
-    )
-
+    await db.flush()
+    callout_id = callout.id
     await db.commit()
-    return response
+    await db.refresh(callout)
+
+    # Spawn the recommendation pipeline. The task opens its own DB
+    # session so it survives the request scope closing.
+    task = asyncio.create_task(
+        _run_recommendation_job(callout_id=callout_id, request=request, app_settings=settings)
+    )
+    _background_jobs.add(task)
+    task.add_done_callback(_background_jobs.discard)
+
+    return await _build_job_response(callout, db)
+
+
+@router.get(
+    "/callouts/{callout_id}",
+    response_model=CalloutJobResponse,
+    summary="Fetch the current status of a callout recommendation job",
+)
+async def get_callout_job(
+    callout_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> CalloutJobResponse:
+    callout = await db.get(Callout, callout_id)
+    if callout is None:
+        raise HTTPException(status_code=404, detail=f"Callout {callout_id} not found")
+    return await _build_job_response(callout, db)
 
 
 @router.get(
@@ -201,3 +240,117 @@ async def list_outreach(
         )
         for n in notifications
     ]
+
+
+# --- helpers ---------------------------------------------------------------
+
+
+async def _build_job_response(
+    callout: Callout, db: AsyncSession
+) -> CalloutJobResponse:
+    """Hydrate a CalloutJobResponse from a persisted Callout row.
+
+    When status=COMPLETED, loads the latest RecommendationLog for this
+    callout and inlines candidates + filter_stats. If COMPLETED but no
+    log exists, surfaces the condition as FAILED so the UI doesn't hang.
+    """
+
+    unit = await db.get(Unit, callout.unit_id)
+    unit_name = unit.name if unit else callout.unit_id
+
+    called_out: Optional[CalledOutEmployee] = None
+    try:
+        called_out = await load_called_out_employee(callout.employee_id, db)
+    except Exception:  # pragma: no cover — defensive
+        called_out = None
+
+    status = CalloutJobStatus(callout.status.value)
+    error_message = callout.error_message
+    candidates: Optional[List[ScoredCandidate]] = None
+    filter_stats: Optional[FilterStats] = None
+    generated_at: Optional[datetime] = None
+    recommendation_log_id: Optional[int] = None
+
+    if status == CalloutJobStatus.COMPLETED:
+        rec = (
+            await db.execute(
+                select(RecommendationLog)
+                .where(RecommendationLog.callout_id == callout.id)
+                .order_by(RecommendationLog.id.desc())
+            )
+        ).scalars().first()
+        if rec is None:
+            status = CalloutJobStatus.FAILED
+            if not error_message:
+                error_message = "Recommendation result missing"
+        else:
+            recommendation_log_id = rec.id
+            candidates = [
+                ScoredCandidate.model_validate(c) for c in (rec.ranked_candidates or [])
+            ]
+            filter_stats = FilterStats.model_validate(rec.filter_stats or {})
+            generated_at = rec.request_timestamp
+
+    return CalloutJobResponse(
+        callout_id=callout.id,
+        status=status,
+        unit_id=callout.unit_id,
+        unit_name=unit_name,
+        shift_date=callout.shift_date,
+        shift_label=callout.shift_label,
+        called_out_employee=called_out,
+        reported_at=callout.reported_at,
+        error_message=error_message,
+        recommendation_log_id=recommendation_log_id,
+        candidates=candidates,
+        filter_stats=filter_stats,
+        generated_at=generated_at,
+    )
+
+
+async def _run_recommendation_job(
+    callout_id: int,
+    request: CalloutRequest,
+    app_settings: Settings,
+) -> None:
+    """Background worker: run the pipeline in a dedicated session.
+
+    Late-binds db_session.async_session_factory so tests that patch the
+    module attribute with a SQLite sessionmaker get picked up here.
+    """
+
+    session_factory = db_session.async_session_factory
+    try:
+        async with session_factory() as session:
+            try:
+                await generate_recommendations(
+                    callout=request,
+                    callout_id=callout_id,
+                    db=session,
+                    settings=app_settings,
+                )
+                callout = await session.get(Callout, callout_id)
+                if callout is not None:
+                    callout.status = CalloutStatus.COMPLETED
+                    callout.completed_at = datetime.now(timezone.utc)
+                    callout.error_message = None
+                await session.commit()
+                return
+            except Exception as exc:
+                await session.rollback()
+                raise
+    except Exception as exc:  # noqa: BLE001 — we want to serialize any failure
+        logger.exception("callout_job_failed", callout_id=callout_id)
+        message = str(exc) or exc.__class__.__name__
+        # Open a fresh session — the previous one may be in a bad state
+        # after the rollback.
+        try:
+            async with session_factory() as session:
+                callout = await session.get(Callout, callout_id)
+                if callout is not None:
+                    callout.status = CalloutStatus.FAILED
+                    callout.completed_at = datetime.now(timezone.utc)
+                    callout.error_message = message[:2000]
+                    await session.commit()
+        except Exception:  # pragma: no cover — last-resort
+            logger.exception("callout_job_failure_persist_failed", callout_id=callout_id)

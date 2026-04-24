@@ -71,6 +71,24 @@ export interface CalloutResponse {
   generated_at: string;
 }
 
+export type CalloutJobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+
+export interface CalloutJobResponse {
+  callout_id: number;
+  status: CalloutJobStatus;
+  unit_id: string;
+  unit_name: string;
+  shift_date: string;
+  shift_label: ShiftLabel;
+  called_out_employee: CalledOutEmployee;
+  reported_at: string;
+  error_message: string | null;
+  recommendation_log_id: number | null;
+  candidates: ScoredCandidate[] | null;
+  filter_stats: FilterStats | null;
+  generated_at: string | null;
+}
+
 export interface OverrideRequest {
   recommendation_log_id: number;
   selected_employee_id: string;

@@ -6,6 +6,7 @@ import {
   commitDecisions,
   generateSchedule,
   getAllActiveStaff,
+  getCallout,
   getDemoConfig,
   getMonthlySchedule,
   getRecentCallouts,
@@ -73,12 +74,30 @@ export function useSubmitCallout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (req: CalloutRequest) => submitCallout(req),
-    onSuccess: (_, req) => {
+    onSuccess: (data, req) => {
+      // Seed the polling cache so consumers can render the initial
+      // RUNNING state without a second network round-trip.
+      qc.setQueryData(["callout", data.callout_id], data);
       const [year, month] = req.shift_date.split("-").map(Number);
       if (year && month) {
         qc.invalidateQueries({ queryKey: ["workHours", year, month] });
         qc.invalidateQueries({ queryKey: ["monthlySchedule", year, month] });
       }
+    },
+  });
+}
+
+export function useCalloutJob(calloutId: number | null) {
+  return useQuery({
+    queryKey: ["callout", calloutId],
+    queryFn: () => getCallout(calloutId!),
+    enabled: calloutId !== null,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 1000;
+      return data.status === "PENDING" || data.status === "RUNNING"
+        ? 1000
+        : false;
     },
   });
 }

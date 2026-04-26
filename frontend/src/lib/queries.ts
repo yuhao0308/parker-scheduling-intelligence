@@ -234,6 +234,7 @@ export function useRespondConfirmation(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -245,6 +246,7 @@ export function useCommitDecisions(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -270,6 +272,7 @@ export function useReplaceEntry(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -281,6 +284,7 @@ export function useRemoveEntry(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -292,6 +296,7 @@ export function useTimeoutSweep(weekStart: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["confirmations", weekStart] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -303,6 +308,7 @@ export function useRegenerateWeek() {
     onSuccess: (_, req) => {
       qc.invalidateQueries({ queryKey: ["confirmations", req.week_start] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -314,6 +320,7 @@ export function useAutogenSubmit() {
     onSuccess: (_, req) => {
       qc.invalidateQueries({ queryKey: ["confirmations", req.week_start] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }
@@ -384,6 +391,7 @@ export function useRespondOutreach() {
     onSuccess: (_, args) => {
       qc.invalidateQueries({ queryKey: ["outreach", args.calloutId] });
       qc.invalidateQueries({ queryKey: ["monthlySchedule"] });
+      qc.invalidateQueries({ queryKey: ["workHours"] });
     },
   });
 }

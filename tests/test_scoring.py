@@ -76,7 +76,10 @@ class TestClinicalFit:
         )
         assert score == 0.8
 
-    def test_lt_to_subacute_severe_penalty(self, config):
+    def test_lt_to_subacute_discouraged_but_allowed(self, config):
+        # Per John 4/24: LT covering Short-Term is preferred-not, not absolute.
+        # Discouraged (lower than subacute_to_lt's 0.8) but non-zero so the
+        # candidate still ranks when nobody better is available.
         score = compute_clinical_fit(
             candidate_home_typology=UnitTypology.LT,
             candidate_cross_trained_unit_ids=[],
@@ -85,7 +88,7 @@ class TestClinicalFit:
             home_unit_id="U-LT1",
             config=config,
         )
-        assert score == 0.0
+        assert score == 0.4
 
 
 class TestFloatPenalty:
@@ -179,4 +182,4 @@ class TestLoadScoringConfig:
         assert config.weights.equity == 0.05
         assert config.weights.willingness == 0.02
         assert config.max_relevant_distance_miles == 30
-        assert config.clinical_fit_scores["lt_to_subacute"] == 0.0
+        assert config.clinical_fit_scores["lt_to_subacute"] == 0.4

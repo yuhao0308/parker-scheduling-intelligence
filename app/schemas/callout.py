@@ -110,7 +110,20 @@ class CalloutResponse(BaseModel):
                             "float_penalty": 0.0,
                             "total": 0.9445,
                         },
-                        "rationale": "- Hours: 29.3h of straight time remaining this week\n- Experience: CNA — Home unit match\n- Distance: 3.2 miles from facility",
+                        "rationale": {
+                            "headline": "Home-unit CNA with full OT headroom",
+                            "highlights": [
+                                {"label": "Hours this month", "value": "12 shifts · 90.0h", "tone": "neutral"},
+                                {"label": "OT headroom", "value": "29.3h of straight time remaining this week", "tone": "positive"},
+                                {"label": "Clinical fit", "value": "Home unit", "tone": "positive"},
+                                {"label": "Distance", "value": "3.2 miles from facility", "tone": "positive"},
+                            ],
+                            "reasons": [
+                                "Already assigned to this unit as home — no float needed",
+                                "Plenty of OT headroom — no premium-pay impact",
+                            ],
+                            "risks": [],
+                        },
                         "rationale_source": "template",
                     }
                 ],

@@ -72,7 +72,14 @@ export function AppShell({ children }: AppShellProps) {
   return (
     <div className="flex min-h-screen w-full">
       <AppSidebar />
-      <main className="flex-1 p-6 overflow-auto">{children}</main>
+      <main className="flex-1 p-6 overflow-auto">
+        <div
+          key={pathname}
+          className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300"
+        >
+          {children}
+        </div>
+      </main>
       <WorkHoursMonitor />
     </div>
   );

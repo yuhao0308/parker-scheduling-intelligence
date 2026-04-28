@@ -162,7 +162,10 @@ export function ShiftDetailDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="sm:max-w-6xl w-[95vw] max-h-[80vh] overflow-y-auto">
+        <DialogContent
+          className="sm:max-w-6xl w-[95vw] max-h-[80vh] overflow-y-auto"
+          style={{ viewTransitionName: "shift-pill-active" }}
+        >
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>

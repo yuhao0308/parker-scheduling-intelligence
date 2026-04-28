@@ -184,20 +184,38 @@ export function CalloutForm({
           </div>
         </div>
 
-        {/* Row 2: Shift toggle */}
+        {/* Row 2: Shift toggle — sliding underline indicator (Linear-style) */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Shift</Label>
-          <div className="grid grid-cols-3 gap-2 sm:w-72">
+          <div className="relative grid grid-cols-3 gap-2 sm:w-72 isolate">
+            {/* Sliding underline. Each cell is (100% - 1rem) / 3 wide, with
+                0.5rem of gap between cells, so cell N starts at
+                N * ((100% - 1rem)/3 + 0.5rem) = N * (100% + 0.5rem) / 3. */}
+            <span
+              aria-hidden
+              className={cn(
+                "pointer-events-none absolute bottom-0 h-0.5 rounded-full",
+                "transition-[left,background-color] duration-300 ease-out",
+                shiftLabel === "DAY" && "bg-amber-500",
+                shiftLabel === "EVENING" && "bg-violet-500",
+                shiftLabel === "NIGHT" && "bg-slate-700",
+              )}
+              style={{
+                width: "calc((100% - 1rem) / 3)",
+                left: `calc(${SHIFT_OPTIONS.findIndex((s) => s.value === shiftLabel)} * (100% + 0.5rem) / 3)`,
+              }}
+            />
             {SHIFT_OPTIONS.map((s) => (
               <button
                 key={s.value}
                 type="button"
                 onClick={() => setShiftLabel(s.value)}
                 className={cn(
-                  "flex flex-col items-center justify-center rounded-lg border-2 px-3 py-2.5 font-medium transition-all cursor-pointer",
+                  "flex flex-col items-center justify-center rounded-lg border-2 px-3 py-2.5 font-medium cursor-pointer",
+                  "transition-all duration-200 ease-out active:scale-95",
                   shiftLabel === s.value
-                    ? s.activeClass
-                    : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+                    ? cn(s.activeClass, "shadow-sm")
+                    : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground hover:-translate-y-px",
                 )}
               >
                 <span className="font-semibold text-[13px]">{s.label}</span>
@@ -260,7 +278,7 @@ function UnitPicker({ units, loading, selectedId, onSelect }: UnitPickerProps) {
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="h-10 rounded-lg border border-transparent bg-muted/40 animate-pulse"
+            className="h-10 rounded-lg border border-transparent skeleton"
           />
         ))}
       </div>
@@ -269,18 +287,21 @@ function UnitPicker({ units, loading, selectedId, onSelect }: UnitPickerProps) {
 
   return (
     <div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
-      {units.map((unit) => {
+      {units.map((unit, i) => {
         const isSelected = selectedId === unit.unit_id;
         return (
           <button
             key={unit.unit_id}
             type="button"
             onClick={() => onSelect(unit.unit_id)}
+            style={{ animationDelay: `${Math.min(i * 30, 240)}ms` }}
             className={cn(
-              "group flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-all",
+              "group flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 text-left",
+              "transition-all duration-200 ease-out active:scale-[0.98]",
+              "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300",
               isSelected
                 ? "border-primary/60 bg-primary/5 shadow-sm"
-                : "border-border/70 bg-background hover:border-muted-foreground/30 hover:bg-muted/35",
+                : "border-border/70 bg-background hover:border-muted-foreground/30 hover:bg-muted/35 hover:-translate-y-px",
             )}
           >
             <span
@@ -356,18 +377,21 @@ function EmployeePicker({
         </EmptyState>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-          {employees.map((e) => {
+          {employees.map((e, i) => {
             const isSelected = selectedId === e.employee_id;
             return (
               <button
                 key={e.employee_id}
                 type="button"
                 onClick={() => onSelect(isSelected ? null : e.employee_id)}
+                style={{ animationDelay: `${Math.min(i * 35, 280)}ms` }}
                 className={cn(
-                  "flex min-w-0 flex-col items-start gap-1.5 rounded-lg border-2 px-2.5 py-2 text-left transition-all cursor-pointer",
+                  "flex min-w-0 flex-col items-start gap-1.5 rounded-lg border-2 px-2.5 py-2 text-left cursor-pointer",
+                  "transition-all duration-200 ease-out active:scale-95",
+                  "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300",
                   isSelected
-                    ? "border-primary bg-primary/5 shadow-sm"
-                    : "border-transparent bg-muted/40 hover:bg-muted hover:border-muted-foreground/20",
+                    ? "border-primary bg-primary/5 shadow-sm scale-[1.02]"
+                    : "border-transparent bg-muted/40 hover:bg-muted hover:border-muted-foreground/20 hover:-translate-y-px",
                 )}
               >
                 {/* Selection dot */}
@@ -418,8 +442,10 @@ function EmptyState({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-lg border border-dashed bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground">
-      <span className="text-muted-foreground/60">{icon}</span>
+    <div className="flex items-center gap-2.5 rounded-lg border border-dashed bg-muted/20 px-4 py-3.5 text-sm text-muted-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300">
+      <span className="text-muted-foreground/60 motion-safe:animate-breathe">
+        {icon}
+      </span>
       {children}
     </div>
   );
@@ -431,7 +457,7 @@ function LoadingState() {
       {Array.from({ length: 5 }).map((_, i) => (
         <div
           key={i}
-          className="h-[68px] rounded-lg border-2 border-transparent bg-muted/40 animate-pulse"
+          className="h-[68px] rounded-lg border-2 border-transparent skeleton"
         />
       ))}
     </div>

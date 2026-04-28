@@ -27,6 +27,7 @@ from app.models.staff import StaffMaster
 from app.models.unit import Unit
 from app.schemas.callout import CalledOutEmployee, CalloutRequest, CalloutResponse
 from app.schemas.candidate import FilterStats, ScoreBreakdown, ScoredCandidate
+from app.schemas.rationale import Rationale
 from app.schemas.common import EmploymentClass, LicenseType, ShiftLabel, UnitTypology
 from app.services.filter import (
     CandidateRecord,
@@ -54,11 +55,13 @@ from app.services.scoring import (
 )
 from app.services.shift_utils import SHIFT_DURATION_HOURS
 from app.services.staff_loader import (
+    MonthScheduleMetrics,
     build_candidate_records,
     build_schedule_context,
     load_exclusions,
     load_hours_map,
     load_last_shift_dates,
+    load_month_schedule_metrics,
     load_staff_pool,
     load_unit_minimums,
 )
@@ -125,6 +128,9 @@ async def generate_recommendations(
     scored = []
     hours_map = await load_hours_map(db)
     last_shift_map = await load_last_shift_dates(db, callout.shift_date)
+    month_metrics_map = await load_month_schedule_metrics(
+        db, callout.shift_date, target_unit_id=callout.unit_id
+    )
 
     for cand in filter_result.passed:
         # OT headroom
@@ -222,7 +228,16 @@ async def generate_recommendations(
             )
             continue
 
-        scored.append((cand, result, dist_miles, would_trigger_ot, ot_desc, clin_desc))
+        scored.append((
+            cand,
+            result,
+            dist_miles,
+            would_trigger_ot,
+            ot_desc,
+            clin_desc,
+            hours_this_cycle,
+            shift_count_biweek,
+        ))
 
     # 9. Sort by score descending, take top N
     scored.sort(key=lambda x: x[1].total, reverse=True)
@@ -230,7 +245,19 @@ async def generate_recommendations(
 
     # 10. Generate rationales
     signals = []
-    for rank, (cand, res, dist, ot_trigger, ot_desc, clin_desc) in enumerate(scored, 1):
+    for rank, (cand, res, dist, ot_trigger, ot_desc, clin_desc, _hrs, _shifts) in enumerate(scored, 1):
+        month_metrics = month_metrics_map.get(cand.employee_id, MonthScheduleMetrics())
+        peak_label, projected_label = _build_workload_labels(
+            cand.license, month_metrics
+        )
+        last_shift = last_shift_map.get(cand.employee_id)
+        days_since = (callout.shift_date - last_shift).days if last_shift else None
+        tenure_years = (
+            (callout.shift_date - cand.hire_date).days / 365.25
+            if cand.hire_date
+            else None
+        )
+
         signals.append(
             CandidateSignals(
                 rank=rank,
@@ -250,6 +277,14 @@ async def generate_recommendations(
                 is_home_unit=cand.home_unit_id == callout.unit_id,
                 float_penalty=res.float_penalty,
                 total_score=res.total,
+                scheduled_shifts_this_month=month_metrics.scheduled_shifts,
+                scheduled_hours_this_month=month_metrics.scheduled_hours,
+                home_unit_shifts_this_month=month_metrics.home_unit_shifts,
+                float_shifts_this_month=month_metrics.float_shifts,
+                peak_load_label=peak_label,
+                projected_overtime_label=projected_label,
+                days_since_last_shift=days_since,
+                tenure_years=tenure_years,
             )
         )
 
@@ -264,7 +299,15 @@ async def generate_recommendations(
 
     # 11. Build response
     response_candidates = []
-    for i, (cand, res, *_) in enumerate(scored):
+    for i, (cand, res, dist, ot_trigger, ot_desc, clin_desc, hrs_cycle, shifts_biweek) in enumerate(scored):
+        m = month_metrics_map.get(cand.employee_id, MonthScheduleMetrics())
+        last_shift = last_shift_map.get(cand.employee_id)
+        days_since = (callout.shift_date - last_shift).days if last_shift else None
+        tenure_years = (
+            (callout.shift_date - cand.hire_date).days / 365.25
+            if cand.hire_date
+            else None
+        )
         response_candidates.append(
             ScoredCandidate(
                 rank=i + 1,
@@ -284,8 +327,27 @@ async def generate_recommendations(
                     willingness=res.willingness,
                     total=res.total,
                 ),
-                rationale=rationales[i] if i < len(rationales) else "",
+                rationale=rationales[i] if i < len(rationales) else _empty_rationale(),
                 rationale_source=rationale_source,
+                would_trigger_ot=ot_trigger,
+                ot_headroom_label=ot_desc,
+                hours_this_cycle=hrs_cycle,
+                shift_count_this_biweek=shifts_biweek,
+                scheduled_shifts_this_month=m.scheduled_shifts,
+                scheduled_hours_this_month=m.scheduled_hours,
+                peak_week_hours=m.peak_week_hours,
+                peak_biweekly_shifts=m.peak_biweekly_shifts,
+                projected_overtime_hours=m.projected_overtime_hours,
+                projected_overtime_shifts=m.projected_overtime_shifts,
+                is_home_unit=cand.home_unit_id == callout.unit_id,
+                home_unit_typology=cand.home_unit_typology,
+                target_unit_typology=target_typology.value,
+                clinical_fit_description=clin_desc,
+                distance_miles=dist,
+                tenure_years=tenure_years,
+                days_since_last_shift=days_since,
+                target_unit_shifts=m.target_unit_shifts,
+                has_adjacent_shift=m.has_adjacent_shift,
             )
         )
 
@@ -412,3 +474,35 @@ def _clinical_fit_description(
         return "Long-Term-only covering Short-Term — clinical risk"
 
     return "unknown fit"
+
+
+def _empty_rationale() -> Rationale:
+    return Rationale(headline="", highlights=[], reasons=[], risks=[])
+
+
+def _build_workload_labels(
+    license_type: LicenseType, m: "MonthScheduleMetrics"
+) -> tuple[str, str]:
+    """Format the peak-load and projected-OT labels exactly like the workload monitor."""
+    if license_type == LicenseType.RN:
+        peak = f"{m.peak_biweekly_shifts} shifts / peak biweek"
+        parts: list[str] = []
+        if m.projected_overtime_shifts > 0:
+            parts.append(
+                f"{m.projected_overtime_shifts} OT shift"
+                + ("" if m.projected_overtime_shifts == 1 else "s")
+            )
+        if m.double_shift_days > 0:
+            parts.append(
+                f"{m.double_shift_days} double"
+                + ("" if m.double_shift_days == 1 else "s")
+            )
+        projected = " · ".join(parts) if parts else "None projected"
+    else:
+        peak = f"{m.peak_week_hours:.1f}h / peak week"
+        projected = (
+            f"{m.projected_overtime_hours:.1f} OT hours"
+            if m.projected_overtime_hours > 0
+            else "None projected"
+        )
+    return peak, projected

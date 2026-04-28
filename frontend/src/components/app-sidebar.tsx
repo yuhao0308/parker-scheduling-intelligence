@@ -21,21 +21,40 @@ export function AppSidebar() {
         <p className="text-xs text-muted-foreground">Scheduling Intelligence</p>
       </div>
       <nav className="flex-1 p-2 space-y-1">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cn(
-              "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors",
-              pathname.startsWith(item.href)
-                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                : "hover:bg-sidebar-accent/50"
-            )}
-          >
-            <span>{item.icon}</span>
-            {item.label}
-          </Link>
-        ))}
+        {navItems.map((item) => {
+          const active = pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "group relative flex items-center gap-2 px-3 py-2 rounded-md text-sm",
+                "transition-all duration-200 ease-out",
+                active
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                  : "hover:bg-sidebar-accent/50 hover:translate-x-0.5"
+              )}
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-primary",
+                  "transition-all duration-300 ease-out",
+                  active ? "opacity-100 scale-y-100" : "opacity-0 scale-y-50"
+                )}
+              />
+              <span
+                className={cn(
+                  "transition-transform duration-200 ease-out",
+                  "group-hover:scale-110"
+                )}
+              >
+                {item.icon}
+              </span>
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
       <div className="p-4 border-t text-xs text-muted-foreground">
         v0.1.0

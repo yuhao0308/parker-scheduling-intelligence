@@ -33,6 +33,7 @@ import {
 } from "@/lib/queries";
 import type {
   AutogenSubmitResult,
+  CalendarLoadingScope,
   ConfirmationEntry,
   ConfirmationStatus,
   StaffOut,
@@ -43,6 +44,7 @@ interface AutoGenTabProps {
   month: number;
   weekStart: string;
   onWeekStartChange: (value: string) => void;
+  onLoadingScopeChange?: (scope: CalendarLoadingScope | null) => void;
 }
 
 type ScheduleScope = "week" | "month";
@@ -71,11 +73,22 @@ interface EmployeeMembership {
 
 type RowError = { message: string; retry: () => void };
 
+const MONTH_SHORT = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+function formatWeekLabel(weekStart: string): string {
+  const d = new Date(`${weekStart}T00:00:00`);
+  return `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`;
+}
+
 export function AutoGenTab({
   year,
   month,
   weekStart,
   onWeekStartChange,
+  onLoadingScopeChange,
 }: AutoGenTabProps) {
   const [scheduleScope, setScheduleScope] = useState<ScheduleScope>("week");
   const { data: staff = [] } = useAllActiveStaff();
@@ -107,6 +120,41 @@ export function AutoGenTab({
   const commitMutation = useCommitDecisions(weekStart);
   const commitMonthlyMutation = useCommitMonthlyDecisions(year, month);
   const removeMutation = useRemoveEntry(weekStart);
+
+  // Drive the calendar's loading overlay. Week-scoped mutations highlight just
+  // the affected week row; month-scoped ones overlay the whole grid.
+  const weekBuilding = autogenMutation.isPending || commitMutation.isPending;
+  const monthBuilding =
+    monthlyAutogenMutation.isPending || commitMonthlyMutation.isPending;
+  useEffect(() => {
+    if (!onLoadingScopeChange) return;
+    if (monthBuilding) {
+      onLoadingScopeChange({
+        kind: "month",
+        year,
+        month,
+        label: `${MONTH_NAMES[month - 1]} ${year}`,
+      });
+    } else if (weekBuilding) {
+      onLoadingScopeChange({
+        kind: "week",
+        weekStart,
+        label: `week of ${formatWeekLabel(weekStart)}`,
+      });
+    } else {
+      onLoadingScopeChange(null);
+    }
+  }, [
+    monthBuilding,
+    weekBuilding,
+    year,
+    month,
+    weekStart,
+    onLoadingScopeChange,
+  ]);
+  useEffect(() => {
+    return () => onLoadingScopeChange?.(null);
+  }, [onLoadingScopeChange]);
 
   // Pool: supervisor's checkbox selection. Until they touch it, derive from
   // the active week in week mode, or default to all staff in month mode.

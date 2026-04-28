@@ -36,38 +36,45 @@ def _make_signal(rank=1, name="Maria R.", would_trigger_ot=False):
         is_home_unit=True,
         float_penalty=0.0,
         total_score=0.87,
+        scheduled_shifts_this_month=12,
+        scheduled_hours_this_month=90.0,
+        peak_load_label="30.0h / peak week",
+        projected_overtime_label="None projected",
     )
 
 
 class TestTemplateRationale:
-    def test_basic_template(self):
+    def test_template_does_not_repeat_chart_data(self):
+        """Reasons must NOT cite numeric data the UI chart already shows."""
         sig = _make_signal()
         result = _template_rationale(sig)
-        assert result.count("\n") == 2
-        assert result.startswith("- Hours:")
-        assert "- Experience:" in result
-        assert result.endswith("- Distance: 3.2 miles from facility")
-        assert "6.0h" in result
+        assert result.headline
+        body = " ".join(result.reasons + result.risks).lower()
+        # No numeric data should leak into prose — that's the chart's job.
+        assert "miles" not in body
+        assert "h remaining" not in body
+        assert "shifts remaining" not in body
+        # Highlights array is reserved for backwards-compat only.
+        assert result.highlights == []
 
-    def test_ot_warning(self):
+    def test_ot_warning_appears_in_risks(self):
         sig = _make_signal(would_trigger_ot=True)
         result = _template_rationale(sig)
-        assert "would trigger OT" in result
+        assert any("overtime" in r.lower() for r in result.risks)
 
-    def test_floating_status(self):
+    def test_cross_trained_surfaces_in_reasons(self):
         sig = _make_signal()
         sig.is_home_unit = False
         sig.home_unit = "U-LT1"
         sig.home_unit_typology = "LT"
-        sig.clinical_fit_description = ""
+        sig.clinical_fit_description = "cross-trained for this unit"
         result = _template_rationale(sig)
-        assert "floating" in result.lower() or "U-LT1" in result
+        assert any("cross-trained" in r.lower() for r in result.reasons)
 
 
 class TestGenerateRationales:
     @pytest.mark.asyncio
     async def test_fallback_on_ollama_error(self):
-        """When Ollama is unreachable, fall back to template."""
         settings = Settings(ollama_model="qwen3.5:9b")
         candidates = [_make_signal(rank=1), _make_signal(rank=2, name="James T.")]
 
@@ -81,10 +88,8 @@ class TestGenerateRationales:
 
         assert source == "template"
         assert len(rationales) == 2
-        assert rationales[0].startswith("- Hours:")
-        assert rationales[1].startswith("- Hours:")
-        assert "- Experience:" in rationales[0]
-        assert "- Distance:" in rationales[1]
+        for r in rationales:
+            assert r.headline
 
     @pytest.mark.asyncio
     async def test_empty_candidates(self):
@@ -96,17 +101,16 @@ class TestGenerateRationales:
         assert source == "template"
 
     @pytest.mark.asyncio
-    async def test_successful_llm_response(self):
-        """Mock a successful Ollama response."""
+    async def test_llm_response_keeps_narrative_drops_numeric_highlights(self):
         settings = Settings(ollama_model="qwen3.5:9b")
         candidates = [_make_signal(rank=1)]
 
         mock_response = MagicMock()
         mock_response.message.content = (
-            '{"candidates": [{"rank": 1, "rationale": '
-            '"- Hours: 6.0h of straight time remaining this week\\n'
-            '- Experience: CNA — Home unit match\\n'
-            '- Distance: 3.2 miles from facility"}]}'
+            '{"candidates": [{"rank": 1, '
+            '"headline": "Home-unit CNA — best clinical fit", '
+            '"reasons": ["Already on home unit, no float needed"], '
+            '"risks": []}]}'
         )
 
         with patch("ollama.AsyncClient.chat", new=AsyncMock(return_value=mock_response)):
@@ -115,30 +119,6 @@ class TestGenerateRationales:
             )
 
         assert source == "llm"
-        assert len(rationales) == 1
-        assert rationales[0].startswith("- Hours:")
-
-    @pytest.mark.asyncio
-    async def test_llm_distance_is_overwritten_with_computed_value(self):
-        settings = Settings(ollama_model="qwen3.5:9b")
-        candidates = [_make_signal(rank=1)]
-
-        mock_response = MagicMock()
-        mock_response.message.content = (
-            '{"candidates": [{"rank": 1, "rationale": '
-            '"- Hours: 6.0h of straight time remaining this week\\n'
-            '- Experience: CNA — Home unit match\\n'
-            '- Distance: 0.0 miles from facility"}]}'
-        )
-
-        with patch("ollama.AsyncClient.chat", new=AsyncMock(return_value=mock_response)):
-            rationales, source = await generate_rationales(
-                candidates, "U-SA1", "SUBACUTE", "DAY", "2026-04-09", settings
-            )
-
-        assert source == "llm"
-        assert rationales == [
-            "- Hours: 6.0h of straight time remaining this week\n"
-            "- Experience: CNA — Home unit match\n"
-            "- Distance: 3.2 miles from facility"
-        ]
+        assert rationales[0].headline == "Home-unit CNA — best clinical fit"
+        assert rationales[0].reasons == ["Already on home unit, no float needed"]
+        assert rationales[0].highlights == []

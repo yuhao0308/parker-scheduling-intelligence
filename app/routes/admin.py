@@ -32,7 +32,13 @@ async def update_weights(payload: dict) -> dict:
         current = yaml.safe_load(f)
 
     # Merge updates (only update keys that exist)
-    for section in ("weights", "thresholds", "clinical_fit_scores", "float_penalty_values"):
+    for section in (
+        "weights",
+        "thresholds",
+        "clinical_fit_scores",
+        "float_penalty_values",
+        "ot_warning_thresholds",
+    ):
         if section in payload and section in current:
             current[section].update(payload[section])
 

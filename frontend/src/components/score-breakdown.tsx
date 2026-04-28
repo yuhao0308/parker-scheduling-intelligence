@@ -26,7 +26,7 @@ export function ScoreBreakdown({ breakdown }: { breakdown: ScoreBreakdownType })
                 <span className="text-[10px] text-muted-foreground w-16 truncate">{label}</span>
                 <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${color}`}
+                    className={`h-full rounded-full origin-left motion-safe:animate-bar-grow ${color}`}
                     style={{ width: `${Math.max(value * 100, 2)}%` }}
                   />
                 </div>

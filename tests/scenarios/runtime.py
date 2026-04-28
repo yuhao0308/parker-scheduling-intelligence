@@ -43,16 +43,10 @@ from tests.scenarios.specs import SCENARIOS
 
 @contextmanager
 def _stub_rationales():
+    from app.services.rationale import _template_rationale
+
     async def fake_generate_rationales(candidates, **_kwargs):
-        rationales = [
-            (
-                f"- Hours: {candidate.ot_headroom_description}\n"
-                f"- Experience: {candidate.license} — {candidate.clinical_fit_description}\n"
-                f"- Distance: {candidate.distance_miles:.1f} miles from facility"
-            )
-            for candidate in candidates
-        ]
-        return rationales, "template"
+        return [_template_rationale(c) for c in candidates], "template"
 
     original = recommendation_service.generate_rationales
     recommendation_service.generate_rationales = fake_generate_rationales

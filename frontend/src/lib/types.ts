@@ -22,6 +22,21 @@ export function typologyLabel(value: string | null | undefined): string {
   return TYPOLOGY_LABEL[value] ?? value;
 }
 
+export type RationaleTone = "positive" | "neutral" | "warning" | "danger";
+
+export interface RationaleHighlight {
+  label: string;
+  value: string;
+  tone: RationaleTone;
+}
+
+export interface Rationale {
+  headline: string;
+  highlights: RationaleHighlight[];
+  reasons: string[];
+  risks: string[];
+}
+
 export interface ScoredCandidate {
   rank: number;
   employee_id: string;
@@ -31,8 +46,27 @@ export interface ScoredCandidate {
   home_unit: string;
   score: number;
   score_breakdown: ScoreBreakdown;
-  rationale: string;
+  rationale: Rationale;
   rationale_source: string;
+  would_trigger_ot: boolean;
+  ot_headroom_label: string;
+  hours_this_cycle: number;
+  shift_count_this_biweek: number;
+  scheduled_shifts_this_month: number;
+  scheduled_hours_this_month: number;
+  peak_week_hours: number;
+  peak_biweekly_shifts: number;
+  projected_overtime_hours: number;
+  projected_overtime_shifts: number;
+  is_home_unit: boolean;
+  home_unit_typology: string | null;
+  target_unit_typology: string | null;
+  clinical_fit_description: string;
+  distance_miles: number;
+  tenure_years: number | null;
+  days_since_last_shift: number | null;
+  target_unit_shifts: number;
+  has_adjacent_shift: boolean;
 }
 
 export interface FilterStats {
@@ -184,6 +218,10 @@ export interface MonthlySchedule {
   month: number;
   days: DaySchedule[];
 }
+
+export type CalendarLoadingScope =
+  | { kind: "month"; year: number; month: number; label: string }
+  | { kind: "week"; weekStart: string; label: string };
 
 export interface WorkHoursSummary {
   employee_count: number;
@@ -476,5 +514,9 @@ export interface ScoringWeights {
     same_typology: number;
     cross_typology: number;
     new_hire_multiplier: number;
+  };
+  ot_warning_thresholds?: {
+    standard_hours_remaining_amber: number;
+    rn_shifts_remaining_amber: number;
   };
 }

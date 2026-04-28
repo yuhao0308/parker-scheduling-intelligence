@@ -4,6 +4,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { AutoGenTab } from "@/components/schedule/auto-gen-tab";
 import { CalloutTab } from "@/components/schedule/callout-tab";
+import type { CalendarLoadingScope } from "@/lib/types";
 
 type PanelMode = "autogen" | "callout";
 
@@ -12,6 +13,7 @@ interface OperatorPanelProps {
   month: number;
   weekStart: string;
   onWeekStartChange: (value: string) => void;
+  onLoadingScopeChange?: (scope: CalendarLoadingScope | null) => void;
 }
 
 /**
@@ -26,6 +28,7 @@ export function OperatorPanel({
   month,
   weekStart,
   onWeekStartChange,
+  onLoadingScopeChange,
 }: OperatorPanelProps) {
   const [mode, setMode] = useState<PanelMode>("autogen");
 
@@ -55,6 +58,7 @@ export function OperatorPanel({
             month={month}
             weekStart={weekStart}
             onWeekStartChange={onWeekStartChange}
+            onLoadingScopeChange={onLoadingScopeChange}
           />
         ) : (
           <CalloutTab year={year} month={month} />

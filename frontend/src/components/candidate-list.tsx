@@ -1,8 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Search, X } from "lucide-react";
-import { CandidateRow } from "./candidate-row";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, Search, Users, X } from "lucide-react";
+import {
+  CandidateRow,
+  type CandidateRowSubmitState,
+} from "./candidate-row";
 import { Input } from "@/components/ui/input";
 import { tierCandidates } from "@/lib/tiering";
 import type { ScoredCandidate } from "@/lib/types";
@@ -41,7 +44,11 @@ function CollapsibleSection({
           {count}
         </span>
       </button>
-      {expanded && <div className="space-y-2">{children}</div>}
+      <div className="collapsible-row" data-open={expanded}>
+        <div>
+          {expanded && <div className="space-y-2 pt-1">{children}</div>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -52,11 +59,40 @@ export function CandidateList({
   disabled,
 }: CandidateListProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  // Per-row state machine for the "Contact" choreography.
+  //   idle    — default
+  //   sending — set on click; row gets the green sweep + spinner button
+  //   sent    — set after the parent clears `disabled`; check icon + bg
+  // Tracked here (not on the row) so an in-flight contact survives row
+  // re-orders from filtering or weight tweaks.
+  const [submitStates, setSubmitStates] = useState<
+    Record<string, CandidateRowSubmitState>
+  >({});
+  const sendingId = useRef<string | null>(null);
+  const wasDisabled = useRef(disabled);
+
+  // When the parent's `disabled` flag flips back from true → false, the
+  // mutation has resolved. Promote the `sending` row to `sent`.
+  useEffect(() => {
+    if (wasDisabled.current && !disabled && sendingId.current) {
+      const id = sendingId.current;
+      setSubmitStates((s) => ({ ...s, [id]: "sent" }));
+      sendingId.current = null;
+    }
+    wasDisabled.current = disabled;
+  }, [disabled]);
+
+  function handleSelect(c: ScoredCandidate) {
+    sendingId.current = c.employee_id;
+    setSubmitStates((s) => ({ ...s, [c.employee_id]: "sending" }));
+    onSelect(c);
+  }
 
   if (candidates.length === 0) {
     return (
-      <div className="py-12 text-center text-sm text-muted-foreground">
-        No staff available for this shift.
+      <div className="flex flex-col items-center gap-2 py-12 text-center text-sm text-muted-foreground">
+        <Users className="h-6 w-6 motion-safe:animate-breathe" />
+        <span>No staff available for this shift.</span>
       </div>
     );
   }
@@ -74,14 +110,16 @@ export function CandidateList({
         <FilteredResults
           candidates={candidates}
           query={trimmedQuery}
-          onSelect={onSelect}
+          onSelect={handleSelect}
           disabled={disabled}
+          submitStates={submitStates}
         />
       ) : (
         <TieredResults
           candidates={candidates}
-          onSelect={onSelect}
+          onSelect={handleSelect}
           disabled={disabled}
+          submitStates={submitStates}
         />
       )}
     </div>
@@ -128,11 +166,13 @@ function FilteredResults({
   query,
   onSelect,
   disabled,
+  submitStates,
 }: {
   candidates: ScoredCandidate[];
   query: string;
   onSelect: (c: ScoredCandidate) => void;
   disabled: boolean;
+  submitStates: Record<string, CandidateRowSubmitState>;
 }) {
   const matches = useMemo(
     () => candidates.filter((c) => c.name.toLowerCase().includes(query)),
@@ -141,8 +181,9 @@ function FilteredResults({
 
   if (matches.length === 0) {
     return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        No staff match &ldquo;{query}&rdquo;.
+      <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
+        <Users className="h-5 w-5 motion-safe:animate-breathe" />
+        <span>No staff match &ldquo;{query}&rdquo;.</span>
       </div>
     );
   }
@@ -152,13 +193,19 @@ function FilteredResults({
       <p className="text-xs text-muted-foreground">
         {matches.length} match{matches.length === 1 ? "" : "es"}
       </p>
-      {matches.map((c) => (
-        <CandidateRow
+      {matches.map((c, i) => (
+        <div
           key={c.employee_id}
-          candidate={c}
-          onSelect={onSelect}
-          disabled={disabled}
-        />
+          className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300"
+          style={{ animationDelay: `${Math.min(i * 40, 400)}ms` }}
+        >
+          <CandidateRow
+            candidate={c}
+            onSelect={onSelect}
+            disabled={disabled}
+            submitState={submitStates[c.employee_id] ?? "idle"}
+          />
+        </div>
       ))}
     </div>
   );
@@ -168,10 +215,12 @@ function TieredResults({
   candidates,
   onSelect,
   disabled,
+  submitStates,
 }: {
   candidates: ScoredCandidate[];
   onSelect: (c: ScoredCandidate) => void;
   disabled: boolean;
+  submitStates: Record<string, CandidateRowSubmitState>;
 }) {
   const {
     topRecommendation,
@@ -183,7 +232,7 @@ function TieredResults({
   return (
     <div className="space-y-5">
       {/* Top recommendation */}
-      <div className="space-y-2">
+      <div className="space-y-2 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300">
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Best Match
         </p>
@@ -192,6 +241,7 @@ function TieredResults({
           onSelect={onSelect}
           disabled={disabled}
           isTop
+          submitState={submitStates[topRecommendation.employee_id] ?? "idle"}
         />
       </div>
 
@@ -206,6 +256,7 @@ function TieredResults({
               candidate={c}
               onSelect={onSelect}
               disabled={disabled}
+              submitState={submitStates[c.employee_id] ?? "idle"}
             />
           ))}
         </CollapsibleSection>
@@ -222,6 +273,7 @@ function TieredResults({
               candidate={c}
               onSelect={onSelect}
               disabled={disabled}
+              submitState={submitStates[c.employee_id] ?? "idle"}
             />
           ))}
         </CollapsibleSection>
@@ -235,6 +287,7 @@ function TieredResults({
               candidate={c}
               onSelect={onSelect}
               disabled={disabled}
+              submitState={submitStates[c.employee_id] ?? "idle"}
             />
           ))}
         </CollapsibleSection>

@@ -5,6 +5,18 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-bar-grow: bar-grow 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-soft-pulse: soft-pulse 2.4s ease-in-out infinite;
+  --animate-rise-in: rise-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-risk-pulse: risk-pulse 1.8s ease-in-out infinite;
+  --animate-breathe: breathe 3.4s ease-in-out infinite;
+  --animate-flash-halo: flash-halo 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pop: pop 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-contact-sweep: contact-sweep 900ms ease-out both;
+  --animate-check-draw: check-draw 350ms cubic-bezier(0.65, 0, 0.35, 1) both;
+  --animate-indeterminate: indeterminate 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  --animate-scan-sweep: scan-sweep 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
@@ -126,6 +138,250 @@
   }
   html {
     @apply font-sans;
+    scroll-behavior: smooth;
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   Motion system
+   - Custom keyframes registered as Tailwind animations via @theme above
+   - Use `motion-safe:` to gate motion behind prefers-reduced-motion
+   - Use `animate-bar-grow` on a fixed-width element to grow it from 0
+   - Use `animate-shimmer` on a 200% gradient background
+   ────────────────────────────────────────────────────────────────────── */
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes bar-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* "Ping" pulse for risk indicators (would-trigger-OT, etc.) */
+@keyframes risk-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.62 0.22 25 / 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 4px oklch(0.62 0.22 25 / 0);
+  }
+}
+
+/* Slow opacity breathing for empty-state icons */
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* One-shot halo for status improvements (e.g. unassigned → staffed) */
+@keyframes flash-halo {
+  0% {
+    box-shadow: 0 0 0 0 oklch(0.72 0.18 152 / 0.6);
+  }
+  100% {
+    box-shadow: 0 0 0 14px oklch(0.72 0.18 152 / 0);
+  }
+}
+
+/* Number pop on increment */
+@keyframes pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.18);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Left-to-right confirmation sweep */
+@keyframes contact-sweep {
+  0% {
+    transform: translateX(-110%);
+    opacity: 0.9;
+  }
+  60% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateX(110%);
+    opacity: 0;
+  }
+}
+
+/* SVG check stroke draw */
+@keyframes check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Indeterminate progress bar — Vercel/YouTube-style sliding gradient */
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%) scaleX(0.4);
+  }
+  50% {
+    transform: translateX(20%) scaleX(0.6);
+  }
+  100% {
+    transform: translateX(120%) scaleX(0.4);
+  }
+}
+
+/* Diagonal sheen sweep across the loading region */
+@keyframes scan-sweep {
+  0% {
+    transform: translateX(-60%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(160%);
+    opacity: 0;
+  }
+}
+
+/* Skeleton shimmer — replaces flat `animate-pulse` for a higher-end feel */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    oklch(0.94 0 0) 0%,
+    oklch(0.97 0 0) 50%,
+    oklch(0.94 0 0) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+.dark .skeleton {
+  background: linear-gradient(
+    90deg,
+    oklch(0.27 0 0) 0%,
+    oklch(0.32 0 0) 50%,
+    oklch(0.27 0 0) 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* Smooth grid-rows expand/collapse for any wrapper that wraps a single child */
+.collapsible-row {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.collapsible-row[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+.collapsible-row > * {
+  overflow: hidden;
+}
+
+/* Contact-sweep — used on the candidate row when the user clicks Contact.
+   The pseudo-element rides over the row; parent only needs `position:relative`
+   and `overflow:hidden` (rounded-lg already gives us a clipping context). */
+.contact-sweep {
+  position: relative;
+  isolation: isolate;
+}
+.contact-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    oklch(0.86 0.13 152 / 0.35) 50%,
+    transparent 100%
+  );
+  animation: contact-sweep 900ms ease-out both;
+  z-index: 1;
+}
+
+/* View-transition tuning — keep the morph snappy. Browsers without support
+   silently fall back to no-op. */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(shift-pill-active),
+  ::view-transition-new(shift-pill-active) {
+    animation-duration: 320ms;
+    animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+/* Hover-lift utility for clickable cards */
+.hover-lift {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -4px oklch(0 0 0 / 0.08);
+}
+.hover-lift:active {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .skeleton {
+    animation: none !important;
   }
 }
 

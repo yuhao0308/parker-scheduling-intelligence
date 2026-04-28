@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -14,13 +14,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { MonthCalendar, type StatusFilter } from "@/components/month-calendar";
 import { ShiftDetailDialog } from "@/components/shift-detail-dialog";
+import { DayDetailDialog } from "@/components/day-detail-dialog";
 import { OperatorPanel } from "@/components/schedule/operator-panel";
 import {
   useGenerateSchedule,
   useMonthlySchedule,
   useUnits,
 } from "@/lib/queries";
-import type { ShiftSlot } from "@/lib/types";
+import type { CalendarLoadingScope, MonthlySchedule, ShiftSlot } from "@/lib/types";
 import { useWorkHoursMonitor } from "@/providers/work-hours-provider";
 
 function defaultWeekStart(today = new Date()): string {
@@ -30,6 +31,17 @@ function defaultWeekStart(today = new Date()): string {
   const diffToMonday = (dow + 6) % 7;
   d.setDate(d.getDate() - diffToMonday);
   return d.toISOString().slice(0, 10);
+}
+
+function addMonths(year: number, month: number, delta: number) {
+  const d = new Date(year, month - 1 + delta, 1);
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+}
+
+function isMonthlySchedule(
+  schedule: MonthlySchedule | undefined,
+): schedule is MonthlySchedule {
+  return schedule !== undefined;
 }
 
 const MONTH_NAMES = [
@@ -48,14 +60,32 @@ export default function SchedulePage() {
   const [month, setMonth] = useState(4);
   const [activeSlots, setActiveSlots] = useState<ShiftSlot[]>([]);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [dayDetailOpen, setDayDetailOpen] = useState(false);
+  const [activeDay, setActiveDay] = useState<{
+    date: string;
+    slots: ShiftSlot[];
+  } | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [scenarioIdx, setScenarioIdx] = useState(0);
   const [weekStart, setWeekStart] = useState(() => defaultWeekStart());
   const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [autogenScope, setAutogenScope] = useState<CalendarLoadingScope | null>(
+    null,
+  );
   const { setScope } = useWorkHoursMonitor();
 
+  const previousScope = useMemo(() => addMonths(year, month, -1), [month, year]);
+  const nextScope = useMemo(() => addMonths(year, month, 1), [month, year]);
   const { data, isLoading } = useMonthlySchedule(year, month);
+  const { data: previousMonthData } = useMonthlySchedule(
+    previousScope.year,
+    previousScope.month,
+  );
+  const { data: nextMonthData } = useMonthlySchedule(
+    nextScope.year,
+    nextScope.month,
+  );
   const generateMutation = useGenerateSchedule();
   const { data: units } = useUnits();
 
@@ -90,6 +120,17 @@ export default function SchedulePage() {
     setDetailOpen(true);
   }
 
+  function handleDayClick(date: string, slots: ShiftSlot[]) {
+    setActiveDay({ date, slots });
+    setDayDetailOpen(true);
+  }
+
+  function handleOpenShiftFromDay(slots: ShiftSlot[]) {
+    setDayDetailOpen(false);
+    setActiveSlots(slots);
+    setDetailOpen(true);
+  }
+
   function handleGenerate() {
     const scenario = SCENARIOS[scenarioIdx];
     generateMutation.mutate(
@@ -106,6 +147,22 @@ export default function SchedulePage() {
   useEffect(() => {
     setScope({ year, month });
   }, [month, year, setScope]);
+
+  const handleAutogenScope = useCallback(
+    (scope: CalendarLoadingScope | null) => setAutogenScope(scope),
+    [],
+  );
+
+  // Generate dialog uses a month-scoped mutation — surface it on the calendar
+  // too so the user gets the same visual feedback regardless of entry point.
+  const calendarLoadingScope: CalendarLoadingScope | null = generateMutation.isPending
+    ? {
+        kind: "month",
+        year,
+        month,
+        label: `${MONTH_NAMES[month - 1]} ${year}`,
+      }
+    : autogenScope;
 
   return (
     <div className="w-full space-y-4 schedule-page">
@@ -170,7 +227,7 @@ export default function SchedulePage() {
 
       {/* Generation result */}
       {generateMutation.isSuccess && generateMutation.data && (
-        <Card className="no-print">
+        <Card className="no-print motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-2 motion-safe:duration-300">
           <CardContent className="py-3">
             <div className="flex items-center gap-3 text-sm">
               <Badge
@@ -216,8 +273,13 @@ export default function SchedulePage() {
           <CardContent className="p-3">
             <MonthCalendar
               data={data}
+              adjacentData={[previousMonthData, nextMonthData].filter(
+                isMonthlySchedule,
+              )}
               isLoading={isLoading}
+              loadingScope={calendarLoadingScope}
               onSlotClick={handleSlotClick}
+              onDayClick={handleDayClick}
               selectedUnit={selectedUnit}
               statusFilter={statusFilter}
               today={today}
@@ -231,9 +293,20 @@ export default function SchedulePage() {
             month={month}
             weekStart={weekStart}
             onWeekStartChange={setWeekStart}
+            onLoadingScopeChange={handleAutogenScope}
           />
         </div>
       </div>
+
+      {/* Day detail dialog (all shifts for a date) */}
+      <DayDetailDialog
+        date={activeDay?.date ?? null}
+        slots={activeDay?.slots ?? []}
+        selectedUnit={selectedUnit}
+        open={dayDetailOpen}
+        onOpenChange={setDayDetailOpen}
+        onOpenShift={handleOpenShiftFromDay}
+      />
 
       {/* Shift detail dialog */}
       <ShiftDetailDialog

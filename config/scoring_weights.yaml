@@ -17,10 +17,14 @@ thresholds:
 clinical_fit_scores:
   exact_match: 1.0           # home unit or cross-trained for target typology
   subacute_to_lt: 0.8        # Short-Term-trained covering Long-Term — acceptable
-  lt_to_subacute: 0.0        # Long-Term-only covering Short-Term — severe penalty
+  lt_to_subacute: 0.4        # Long-Term covering Short-Term — discouraged but allowed (per John 4/24)
 
 float_penalty_values:
   home_unit: 0.0             # no penalty — target is home unit
   same_typology: 0.3         # different unit, same type (LT→LT or subacute→subacute)
   cross_typology: 0.6        # different unit, different type
   new_hire_multiplier: 1.5   # amplify penalty for staff < new_hire_months tenure
+
+ot_warning_thresholds:
+  standard_hours_remaining_amber: 8.0   # CNA/LPN/PCT: <8h before weekly OT shows amber
+  rn_shifts_remaining_amber: 2          # RN: <2 shifts before biweekly OT shows amber

@@ -170,6 +170,7 @@ export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
                   candidatesByEmp.get(p.employee_id)?.name ?? p.employee_id
                 }
                 rank={candidatesByEmp.get(p.employee_id)?.rank}
+                sentAt={p.created_at}
                 disabled={respondMutation.isPending}
                 onRespond={handleRespond}
               />
@@ -383,6 +384,7 @@ interface PendingOutreachRowProps {
   employeeId: string;
   candidateName: string;
   rank?: number;
+  sentAt: string;
   disabled: boolean;
   onRespond: (
     notificationId: number,
@@ -391,14 +393,39 @@ interface PendingOutreachRowProps {
   ) => void;
 }
 
+function formatElapsed(sentAtMs: number, nowMs: number): string {
+  const deltaSec = Math.max(0, Math.floor((nowMs - sentAtMs) / 1000));
+  const ss = String(deltaSec % 60).padStart(2, "0");
+  const totalMin = Math.floor(deltaSec / 60);
+  if (totalMin < 60) {
+    const mm = String(totalMin).padStart(2, "0");
+    return `${mm}:${ss}`;
+  }
+  const hh = String(Math.floor(totalMin / 60)).padStart(2, "0");
+  const mm = String(totalMin % 60).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
+function useElapsedLabel(sentAt: string): string {
+  const sentAtMs = useMemo(() => new Date(sentAt).getTime(), [sentAt]);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return formatElapsed(sentAtMs, now);
+}
+
 function PendingOutreachRow({
   notificationId,
   employeeId,
   candidateName,
   rank,
+  sentAt,
   disabled,
   onRespond,
 }: PendingOutreachRowProps) {
+  const elapsedLabel = useElapsedLabel(sentAt);
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
       <div className="flex min-w-0 items-start gap-2.5">
@@ -406,7 +433,12 @@ function PendingOutreachRow({
           <Clock className="h-3.5 w-3.5" />
         </div>
         <div className="min-w-0 flex-1 text-sm leading-snug">
-          <div className="break-words font-medium">{candidateName}</div>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+            <span className="break-words font-medium">{candidateName}</span>
+            <span className="shrink-0 tabular-nums text-xs font-medium text-amber-800">
+              {elapsedLabel}
+            </span>
+          </div>
           <div className="mt-0.5 flex flex-wrap gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
             {rank && <span>#{rank}</span>}
             <span>{employeeId}</span>

@@ -112,11 +112,10 @@ function mixPercent(value: number, total: number) {
 
 // --- license-aware thresholding ----------------------------------------
 //
-// Bar & headroom are driven by *this month's* peak week (non-RN) or peak
-// biweek (RN), derived from ScheduleEntry. This matches the calendar view:
-// if the month is empty, the bar is empty. The HoursLedger snapshot
-// (current_cycle_*) is a separate concept — it's shown as context in the
-// expanded detail, not in the hero bar, to avoid contradicting the calendar.
+// Headroom is driven by *this month's* peak week (non-RN) or peak biweek
+// (RN), derived from ScheduleEntry. The row bar is intentionally separate:
+// it is an OT-cycle projection because payroll/OT rules live on fixed pay
+// periods, not calendar months.
 
 function cycleLoad(employee: EmployeeWorkHours) {
   if (employee.license === "RN") {
@@ -137,10 +136,6 @@ function cycleLoad(employee: EmployeeWorkHours) {
     unitPlural: "h",
     cycleLabel: "peak week",
   };
-}
-
-function formatLoadValue(value: number, isRN: boolean) {
-  return isRN ? `${value}` : `${value.toFixed(1)}h`;
 }
 
 function headroomLabel(employee: EmployeeWorkHours) {
@@ -168,17 +163,79 @@ function headroomLabel(employee: EmployeeWorkHours) {
   return { primary: `${over.toFixed(1)}h over`, tone: "over" as const };
 }
 
-function utilizationPercent(employee: EmployeeWorkHours) {
-  const load = cycleLoad(employee);
-  return clampPercent((load.current / load.cap) * 100);
-}
+// 1.0 FTE = 80h biweekly. Mirrors BIWEEKLY_OT_HOUR_THRESHOLD on the backend.
+const BIWEEKLY_OT_HOURS = 80;
 
-function thresholdTickPercent(employee: EmployeeWorkHours) {
-  const load = cycleLoad(employee);
-  return clampPercent((load.threshold / load.cap) * 100);
+// --- biweekly bar segments --------------------------------------------
+//
+// The bar tells the staffing decision clearly: worked time, scheduled time
+// that still fits inside the budget, remaining budget, and any over-budget
+// exposure. Overage gets its own red segment instead of tinting another
+// segment, so the legend and the visual always agree.
+//
+// The track widens dynamically when worked + scheduled overshoots the
+// budget so the over-budget zone has somewhere to render.
+function cycleBarSegments(employee: EmployeeWorkHours) {
+  const worked = employee.worked_hours_this_cycle ?? 0;
+  const scheduled = employee.scheduled_hours_this_cycle ?? 0;
+  const budget = employee.budget_hours_this_cycle ?? BIWEEKLY_OT_HOURS;
+  const projected = worked + scheduled;
+  const overBudget = Math.max(0, projected - budget);
+  const remaining = Math.max(0, budget - projected);
+  const trackMax = budget + overBudget;
+  const workedInBudget = Math.min(worked, budget);
+  const scheduledInBudget = Math.min(
+    scheduled,
+    Math.max(0, budget - workedInBudget),
+  );
+  const budgetMarkerPct =
+    trackMax > 0 ? clampPercent((budget / trackMax) * 100) : 100;
+
+  const workedPct =
+    trackMax > 0 ? clampPercent((workedInBudget / trackMax) * 100) : 0;
+  const scheduledPct =
+    trackMax > 0 ? clampPercent((scheduledInBudget / trackMax) * 100) : 0;
+  const remainingPct =
+    trackMax > 0 ? clampPercent((remaining / trackMax) * 100) : 0;
+  const overBudgetPct =
+    trackMax > 0 ? clampPercent((overBudget / trackMax) * 100) : 0;
+
+  return {
+    worked,
+    scheduled,
+    budget,
+    projected,
+    remaining,
+    overBudget,
+    workedPct,
+    scheduledPct,
+    remainingPct,
+    overBudgetPct,
+    budgetMarkerPct,
+  };
 }
 
 // --- formatters --------------------------------------------------------
+
+function parseISODateOnly(value?: string | null) {
+  if (!value) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+
+function shortDate(value?: string | null) {
+  const parsed = parseISODateOnly(value);
+  if (!parsed) return "—";
+  return parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function cycleRangeLabel(employee: EmployeeWorkHours) {
+  return `${shortDate(employee.cycle_start_date)}-${shortDate(employee.cycle_end_date)}`;
+}
 
 function peakLabel(employee: EmployeeWorkHours) {
   if (employee.license === "RN") {
@@ -266,6 +323,110 @@ function SummaryTile({
   );
 }
 
+// --- OT summary band ---------------------------------------------------
+//
+// Daily and biweekly OT counts at a glance. The supervisor flagged this as
+// "the warning sign" — placement is right under the existing summary tiles
+// so it's the second thing the eye lands on. When both counts are zero, we
+// drop the rose styling so the panel doesn't always read as alarm.
+function OvertimeSummaryBand({
+  daily,
+  biweekly,
+}: {
+  daily: number;
+  biweekly: number;
+}) {
+  const elevated = daily > 0 || biweekly > 0;
+  const wrapClass = elevated
+    ? "border-rose-200 bg-rose-50/70"
+    : "border-slate-200 bg-white/95";
+  const labelClass = elevated ? "text-rose-700" : "text-slate-500";
+  const valueClass = elevated ? "text-rose-900" : "text-slate-900";
+  const subClass = elevated ? "text-rose-700/80" : "text-slate-500";
+
+  return (
+    <div
+      className={cn(
+        "grid grid-cols-2 gap-2 rounded-2xl border p-3 shadow-sm",
+        wrapClass,
+      )}
+    >
+      <div>
+        <div
+          className={cn(
+            "text-[10px] font-medium uppercase tracking-[0.14em]",
+            labelClass,
+          )}
+        >
+          Daily OT
+        </div>
+        <div
+          className={cn(
+            "mt-1 text-2xl font-semibold tabular-nums",
+            valueClass,
+          )}
+        >
+          {daily}
+        </div>
+        <div className={cn("mt-0.5 text-[11px] leading-4", subClass)}>
+          RN double-shift days projected
+        </div>
+      </div>
+      <div>
+        <div
+          className={cn(
+            "text-[10px] font-medium uppercase tracking-[0.14em]",
+            labelClass,
+          )}
+        >
+          Biweekly OT
+        </div>
+        <div
+          className={cn(
+            "mt-1 text-2xl font-semibold tabular-nums",
+            valueClass,
+          )}
+        >
+          {biweekly}
+        </div>
+        <div className={cn("mt-0.5 text-[11px] leading-4", subClass)}>
+          Staff projected over 80h
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tiny legend explaining the bar segments. Placed once between the OT band
+// and the filters card. Kept inline (no extra component file) since it's
+// purely visual — no logic, no state.
+function BarLegend() {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 text-[10px] text-slate-500">
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block size-2.5 rounded-sm bg-emerald-600" />
+        Worked
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block size-2.5 rounded-sm bg-emerald-300" />
+        Scheduled in budget
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block size-2.5 rounded-sm border border-slate-300 bg-slate-50" />
+        Remaining
+      </span>
+      <span className="inline-flex items-center gap-1">
+        <span className="inline-block size-2.5 rounded-sm bg-rose-500" />
+        Over budget
+      </span>
+      <span className="ml-auto inline-flex items-center gap-1 text-slate-600">
+        <span className="inline-block h-3 w-px bg-slate-500" />
+        Budget line
+      </span>
+    </div>
+  );
+}
+
 // --- employee row ------------------------------------------------------
 
 function EmployeeRow({
@@ -279,12 +440,7 @@ function EmployeeRow({
 }) {
   const status = STATUS_META[employee.overtime_status];
   const headroom = headroomLabel(employee);
-  const utilPct = utilizationPercent(employee);
-  const tickPct = thresholdTickPercent(employee);
-  const load = cycleLoad(employee);
-  const isRN = employee.license === "RN";
-  const currentLabel = formatLoadValue(load.current, isRN);
-  const thresholdLabel = formatLoadValue(load.threshold, isRN);
+  const segments = cycleBarSegments(employee);
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors hover:border-slate-300">
@@ -314,22 +470,85 @@ function EmployeeRow({
             ) : null}
           </div>
 
-          {/* Utilization bar */}
-          <div className="mt-2 relative h-1.5 overflow-hidden rounded-full bg-slate-100">
+          {/* OT-cycle workload bar:
+              solid emerald = clocked hours from time clock data
+              light emerald = scheduled hours that still fit the budget
+              pale neutral  = remaining budget
+              rose          = projected hours over budget */}
+          <div
+            className={cn(
+              "mt-2 relative h-3 overflow-hidden rounded-full border bg-slate-50",
+              segments.overBudget > 0 ? "border-rose-200" : "border-slate-200",
+            )}
+            title={`OT cycle ${cycleRangeLabel(employee)} · Projected ${segments.projected.toFixed(1)}h / ${segments.budget}h budget · Worked ${segments.worked.toFixed(1)}h · Scheduled ${segments.scheduled.toFixed(1)}h${segments.overBudget > 0 ? ` · ${segments.overBudget.toFixed(1)}h over budget` : ` · ${segments.remaining.toFixed(1)}h remaining`}`}
+          >
             <div
-              className={cn("h-full", status.bar)}
-              style={{ width: `${utilPct}%` }}
+              className="absolute inset-y-0 left-0 bg-emerald-600"
+              style={{ width: `${segments.workedPct}%` }}
             />
             <div
-              className="absolute inset-y-0 w-px bg-slate-400"
-              style={{ left: `${tickPct}%` }}
+              className="absolute inset-y-0 bg-emerald-300"
+              style={{
+                left: `${segments.workedPct}%`,
+                width: `${segments.scheduledPct}%`,
+              }}
+            />
+            {segments.remaining > 0 ? (
+              <div
+                className="absolute inset-y-0 bg-slate-50"
+                style={{
+                  left: `${segments.workedPct + segments.scheduledPct}%`,
+                  width: `${segments.remainingPct}%`,
+                }}
+              />
+            ) : null}
+            {segments.overBudget > 0 ? (
+              <div
+                className="absolute inset-y-0 bg-rose-500"
+                style={{
+                  left: `${segments.budgetMarkerPct}%`,
+                  width: `${segments.overBudgetPct}%`,
+                }}
+              />
+            ) : null}
+            <div
+              className="absolute inset-y-0 w-px bg-slate-700"
+              style={{ left: `${segments.budgetMarkerPct}%` }}
             />
           </div>
-          <div className="mt-1 flex items-center justify-between text-[10px] tabular-nums text-slate-400">
-            <span>
-              {currentLabel} / {thresholdLabel}
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] tabular-nums text-slate-500">
+            <span className="font-medium text-slate-600">
+              OT cycle {cycleRangeLabel(employee)}
             </span>
-            <span>{load.cycleLabel}</span>
+            <span>
+              projected{" "}
+              <b
+                className={cn(
+                  segments.overBudget > 0 ? "text-rose-600" : "text-slate-800",
+                )}
+              >
+                {segments.projected.toFixed(1)}h
+              </b>
+              {" / "}
+              {segments.budget}h
+            </span>
+            <span>
+              <b className="text-emerald-700">{segments.worked.toFixed(1)}h</b>{" "}
+              worked
+            </span>
+            <span>
+              <b className="text-emerald-500">{segments.scheduled.toFixed(1)}h</b>{" "}
+              scheduled
+            </span>
+            {segments.overBudget > 0 ? (
+              <span className="ml-auto shrink-0 font-semibold text-rose-600">
+                {segments.overBudget.toFixed(1)}h over budget
+              </span>
+            ) : (
+              <span className="ml-auto shrink-0 text-slate-600">
+                {segments.remaining.toFixed(1)}h remaining
+              </span>
+            )}
           </div>
         </div>
 
@@ -355,13 +574,21 @@ function EmployeeRow({
         <div className="border-t border-slate-100 bg-slate-50/60 px-3 py-3 text-xs">
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             <DetailItem
-              label="This month"
+              label="Month scheduled"
               value={`${employee.scheduled_shifts} shifts · ${employee.scheduled_hours.toFixed(1)}h`}
+            />
+            <DetailItem
+              label="Month actual"
+              value={`${employee.worked_shifts_this_month ?? 0} shifts · ${(employee.worked_hours_this_month ?? 0).toFixed(1)}h`}
             />
             <DetailItem label="Peak load" value={peakLabel(employee)} />
             <DetailItem label="Projected OT" value={projectedOTLabel(employee)} />
             <DetailItem
-              label="Prior ledger"
+              label="OT cycle"
+              value={cycleRangeLabel(employee)}
+            />
+            <DetailItem
+              label="Latest ledger"
               value={`${employee.current_cycle_hours.toFixed(1)}h · ${employee.current_cycle_shifts} shifts`}
             />
           </div>
@@ -881,6 +1108,15 @@ export function WorkHoursMonitor() {
                   tone="callout"
                 />
               </div>
+
+              {/* OT summary band — daily + biweekly cycle counts */}
+              <OvertimeSummaryBand
+                daily={summary?.daily_ot_count ?? 0}
+                biweekly={summary?.biweekly_ot_count ?? 0}
+              />
+
+              {/* Bar segment legend */}
+              <BarLegend />
 
               {/* Filters */}
               <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">

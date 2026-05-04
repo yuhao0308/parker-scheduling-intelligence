@@ -1,15 +1,22 @@
 """Materialize Kronos-format dummy time clock CSVs to artifacts/timeclock/.
 
-Generates 90 days of punch history for the seeded United Hebrew roster,
-runs the aggregator to derive daily totals and biweekly summaries, and
-writes all three layers to CSV. Output files are consumed by
-``app.integrations.timeclock.source.CSVSource`` and the API/DB stub
-variants behind the same interface.
+Generates 90 days of punch history ending on today's date for the seeded
+United Hebrew roster, runs the aggregator to derive daily totals and
+biweekly summaries, and writes all three layers to CSV. Output files are
+consumed by ``app.integrations.timeclock.source.CSVSource`` and the API/DB
+stub variants behind the same interface.
+
+The default end-date is ``date.today()``, resolved at call time. This
+mirrors a real Kronos integration: clock data is always "history through
+right now", and re-running the generator the next day captures the new
+day. ``seed_dev_data.py`` invokes this script's ``generate_and_write``
+helper before its time-clock ingest step so a fresh ``python
+scripts/seed_dev_data.py`` always has data ending today.
 
 Usage:
     python scripts/generate_timeclock_data.py
     python scripts/generate_timeclock_data.py --days 30 --seed 7
-    python scripts/generate_timeclock_data.py --end 2026-04-28 --days 90
+    python scripts/generate_timeclock_data.py --end 2026-05-15 --days 60
 """
 
 from __future__ import annotations
@@ -29,7 +36,6 @@ from app.integrations.timeclock.source import (
 )
 from scripts.seed_dev_data import build_staff_records
 
-DEFAULT_END = date(2026, 4, 28)
 DEFAULT_DAYS = 90
 PAY_PERIOD_LENGTH_DAYS = 14
 
@@ -160,44 +166,35 @@ def _write_pay_period_summary(rows, path: Path) -> None:
             )
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--end",
-        type=date.fromisoformat,
-        default=DEFAULT_END,
-        help="End date of the punch window (inclusive). Default: 2026-04-28",
-    )
-    parser.add_argument(
-        "--days",
-        type=int,
-        default=DEFAULT_DAYS,
-        help="Number of days of history to generate. Default: 90",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Deterministic RNG seed. Default: 42",
-    )
-    parser.add_argument(
-        "--out-dir",
-        type=Path,
-        default=DEFAULT_ARTIFACTS_DIR,
-        help=f"Output directory. Default: {DEFAULT_ARTIFACTS_DIR}",
-    )
-    args = parser.parse_args()
+def generate_and_write(
+    end_date: date | None = None,
+    days: int = DEFAULT_DAYS,
+    seed: int = 42,
+    out_dir: Path | None = None,
+) -> dict[str, int]:
+    """Generate the three Kronos CSVs and write them to ``out_dir``.
 
-    args.out_dir.mkdir(parents=True, exist_ok=True)
+    Reusable entry point so ``seed_dev_data.py`` can call this directly
+    (rather than shelling out) to keep the dummy time-clock data fresh
+    against today's date on every seed run.
 
-    start_date = args.end - timedelta(days=args.days - 1)
+    ``end_date`` defaults to ``date.today()``. ``out_dir`` defaults to
+    ``DEFAULT_ARTIFACTS_DIR``. Returns a small summary dict for logging.
+    """
+    if end_date is None:
+        end_date = date.today()
+    if out_dir is None:
+        out_dir = DEFAULT_ARTIFACTS_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    start_date = end_date - timedelta(days=days - 1)
     print(
         f"Generating Kronos punches for {start_date.isoformat()} to "
-        f"{args.end.isoformat()} (seed={args.seed})"
+        f"{end_date.isoformat()} (seed={seed})"
     )
 
     staff = _staff_seeds()
-    punches = generate_punches(staff, start_date, args.end, seed=args.seed)
+    punches = generate_punches(staff, start_date, end_date, seed=seed)
     print(f"  staff: {len(staff)}  punches: {len(punches):,}")
 
     # Pay periods are biweekly anchored to the seed's known Monday.
@@ -205,7 +202,7 @@ def main() -> None:
     daily_totals_all = []
 
     period_start = _floor_to_cycle(start_date)
-    while period_start <= args.end:
+    while period_start <= end_date:
         period_end = period_start + timedelta(days=PAY_PERIOD_LENGTH_DAYS - 1)
         period_punches = [
             p
@@ -226,10 +223,51 @@ def main() -> None:
         f"pay period rows: {len(summaries):,}"
     )
 
-    _write_punches(punches, args.out_dir / PUNCHES_FILE)
-    _write_daily_totals(daily_totals_all, args.out_dir / DAILY_TOTALS_FILE)
-    _write_pay_period_summary(summaries, args.out_dir / PAY_PERIOD_FILE)
-    print(f"Wrote 3 files to {args.out_dir}")
+    _write_punches(punches, out_dir / PUNCHES_FILE)
+    _write_daily_totals(daily_totals_all, out_dir / DAILY_TOTALS_FILE)
+    _write_pay_period_summary(summaries, out_dir / PAY_PERIOD_FILE)
+    print(f"Wrote 3 files to {out_dir}")
+
+    return {
+        "punches": len(punches),
+        "daily_totals": len(daily_totals_all),
+        "pay_period_rows": len(summaries),
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--end",
+        type=date.fromisoformat,
+        default=None,
+        help="End date of the punch window (inclusive). Default: today.",
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=DEFAULT_DAYS,
+        help=f"Number of days of history to generate. Default: {DEFAULT_DAYS}",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Deterministic RNG seed. Default: 42",
+    )
+    parser.add_argument(
+        "--out-dir",
+        type=Path,
+        default=DEFAULT_ARTIFACTS_DIR,
+        help=f"Output directory. Default: {DEFAULT_ARTIFACTS_DIR}",
+    )
+    args = parser.parse_args()
+    generate_and_write(
+        end_date=args.end,
+        days=args.days,
+        seed=args.seed,
+        out_dir=args.out_dir,
+    )
 
 
 def _floor_to_cycle(d: date) -> date:

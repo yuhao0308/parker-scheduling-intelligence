@@ -6,8 +6,9 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/schedule", label: "Schedule", icon: "📅" },
-  { href: "/callout", label: "Callout", icon: "📞" },
+  { href: "/callout", label: "Call Out", icon: "📞" },
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  { href: "/workload", label: "Workload Monitor", icon: "📈" },
   { href: "/admin/weights", label: "Weights", icon: "⚙️" },
 ];
 

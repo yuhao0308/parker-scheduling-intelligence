@@ -231,6 +231,26 @@ export interface WorkHoursSummary {
   employees_in_ot: number;
   employees_high_ot: number;
   total_float_shifts: number;
+  // Counts derived from role-specific OT periods, not the calendar month.
+  // Daily OT is RN-specific; biweekly OT follows RN shift limits and non-RN budgets.
+  daily_ot_count?: number;
+  biweekly_ot_count?: number;
+}
+
+export interface WorkloadPeriod {
+  period_type: "week" | "biweekly" | string;
+  start_date: string;
+  end_date: string;
+  worked_hours: number;
+  worked_shifts: number;
+  scheduled_hours: number;
+  scheduled_shifts: number;
+  projected_hours: number;
+  projected_shifts: number;
+  threshold_hours: number;
+  remaining_hours: number;
+  overtime_hours: number;
+  double_shift_days: number;
 }
 
 export interface EmployeeWorkHours {
@@ -243,6 +263,8 @@ export interface EmployeeWorkHours {
   current_cycle_shifts: number;
   scheduled_hours: number;
   scheduled_shifts: number;
+  worked_hours_this_month?: number;
+  worked_shifts_this_month?: number;
   peak_week_hours: number;
   projected_overtime_hours: number;
   peak_biweekly_shifts: number;
@@ -255,6 +277,15 @@ export interface EmployeeWorkHours {
   scheduled_unit_ids: string[];
   overtime_status: "healthy" | "near_ot" | "overtime" | "high_ot";
   overtime_detail: string;
+  // Biweekly cycle metrics for the three-segment workload bar. All optional
+  // so the UI degrades gracefully if the backend hasn't been redeployed.
+  worked_hours_this_cycle?: number;
+  scheduled_hours_this_cycle?: number;
+  budget_hours_this_cycle?: number;
+  cycle_start_date?: string | null;
+  cycle_end_date?: string | null;
+  weekly_periods?: WorkloadPeriod[];
+  biweekly_periods?: WorkloadPeriod[];
 }
 
 export interface WorkHoursSnapshot {

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.schemas.common import LICENSED_ROLES, LicenseType, ShiftLabel
+from app.schemas.common import LICENSED_ROLES, EmploymentClass, LicenseType, ShiftLabel
 from app.services.shift_utils import SHIFT_DURATION_HOURS, is_rn_daily_ot
 
 # Overtime thresholds
@@ -23,6 +23,26 @@ WEEKLY_OT_THRESHOLD_HOURS = 37.5
 # Sean's soft cap: 25h of OT above straight time. Beyond this, "I would not call him."
 HIGH_OT_SOFT_CAP_HOURS = WEEKLY_OT_THRESHOLD_HOURS + 25.0  # 62.5
 BIWEEKLY_SHIFT_OT_THRESHOLD = 10  # 11th shift triggers OT
+
+# Per-employment-class biweekly hour budgets used to size the workload-monitor
+# "remaining" segment. Healthcare convention: 1.0 FTE = 80h biweekly. PT and
+# per-diem budgets are tuned for the demo so their bars stay readable rather
+# than perpetually under-filled.
+_BIWEEKLY_BUDGET_HOURS: dict[EmploymentClass, float] = {
+    EmploymentClass.FT: 80.0,
+    EmploymentClass.PT: 60.0,
+    EmploymentClass.PER_DIEM: 40.0,
+}
+
+
+def cycle_budget_hours(employment_class: EmploymentClass) -> float:
+    """Return the biweekly hour budget for an employment class.
+
+    Used by the workload-monitor snapshot to compute the "remaining" white
+    segment of each employee's bar. Driven by the table above so we have one
+    place to tune if leadership wants different defaults.
+    """
+    return _BIWEEKLY_BUDGET_HOURS.get(employment_class, 80.0)
 
 
 def calculate_ot_headroom(

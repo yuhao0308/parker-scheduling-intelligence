@@ -16,6 +16,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
+from app.integrations.timeclock.kronos_schema import PayCode
+from app.integrations.timeclock.source import CSVSource
+from app.models.hours import HoursLedger
 from app.models.notification import SimulatedNotification
 from app.models.schedule import ConfirmationStatus, ScheduleEntry
 from app.models.unit import Unit
@@ -26,21 +29,23 @@ from app.services.filter import (
     ScheduleContext,
     apply_hard_filters,
 )
-from app.services.overtime import calculate_ot_headroom
+from app.services.overtime import (
+    BIWEEKLY_SHIFT_OT_THRESHOLD,
+    WEEKLY_OT_THRESHOLD_HOURS,
+    calculate_ot_headroom,
+)
 from app.services.scoring import (
     compute_clinical_fit,
     compute_float_penalty,
     load_scoring_config,
     score_candidate,
 )
-from app.services.shift_utils import SHIFT_DURATION_HOURS
 from app.services.staffing_requirements import slot_requirements
 from app.services.staff_loader import (
     build_candidate_records,
-    load_exclusions,
-    load_hours_map,
     load_staff_pool,
 )
+from app.services.shift_utils import SHIFT_DURATION_HOURS, is_rn_daily_ot
 
 logger = structlog.get_logger()
 
@@ -52,6 +57,64 @@ PT_WEEKLY_MAX = 24.75  # 3 shifts × 8.25h
 PER_DIEM_WEEKLY_MAX = 41.25  # per diem can work up to full-time
 
 SHIFT_ORDER = [ShiftLabel.DAY, ShiftLabel.EVENING, ShiftLabel.NIGHT]
+
+BIWEEKLY_CYCLE_DAYS = 14
+BIWEEKLY_CYCLE_ANCHOR = date(2026, 3, 30)
+PRODUCTIVE_PAY_CODES = {PayCode.REG, PayCode.OT, PayCode.DT, PayCode.HOL}
+
+
+def _biweekly_cycle_start(value: date) -> date:
+    delta_days = (value - BIWEEKLY_CYCLE_ANCHOR).days
+    if delta_days >= 0:
+        offset = (delta_days // BIWEEKLY_CYCLE_DAYS) * BIWEEKLY_CYCLE_DAYS
+    else:
+        offset = -(
+            ((-delta_days + BIWEEKLY_CYCLE_DAYS - 1) // BIWEEKLY_CYCLE_DAYS)
+            * BIWEEKLY_CYCLE_DAYS
+        )
+    return BIWEEKLY_CYCLE_ANCHOR + timedelta(days=offset)
+
+
+async def _load_hours_by_cycle(
+    db: AsyncSession,
+) -> dict[tuple[str, date], HoursLedger]:
+    result = await db.execute(select(HoursLedger))
+    return {
+        (row.employee_id, row.cycle_start_date): row
+        for row in result.scalars().all()
+    }
+
+
+async def _load_weekly_actual_hours(
+    start: date,
+    end: date,
+    *,
+    as_of: date | None = None,
+) -> dict[tuple[str, int], float]:
+    today = as_of or date.today()
+    if start > today:
+        return {}
+
+    try:
+        totals = await CSVSource().fetch_daily_totals(start, min(end, today))
+    except FileNotFoundError:
+        return {}
+
+    weekly_hours: dict[tuple[str, int], float] = defaultdict(float)
+    for total in totals:
+        if total.pay_code not in PRODUCTIVE_PAY_CODES:
+            continue
+        week_num = total.work_date.isocalendar()[1]
+        weekly_hours[(total.person_number, week_num)] += total.hours
+    return dict(weekly_hours)
+
+
+def _weekly_max_for(candidate: CandidateRecord) -> float:
+    if candidate.employment_class == "FT":
+        return FT_WEEKLY_MAX
+    if candidate.employment_class == "PER_DIEM":
+        return PER_DIEM_WEEKLY_MAX
+    return PT_WEEKLY_MAX
 
 
 async def generate_monthly_schedule(
@@ -71,6 +134,8 @@ async def generate_monthly_schedule(
     _, last_day = calendar.monthrange(year, month)
     first = date(year, month, 1)
     last = date(year, month, last_day)
+    query_start = first - timedelta(days=first.isocalendar().weekday - 1)
+    query_end = last + timedelta(days=7 - last.isocalendar().weekday)
 
     # Clear ALL existing entries for this month (both published and unpublished)
     # so the scheduler can build from scratch without unique constraint violations.
@@ -118,11 +183,12 @@ async def generate_monthly_schedule(
     # Load scoring config
     scoring_config = load_scoring_config(settings.scoring_weights_path)
 
-    # Load hours map (baseline)
-    base_hours_map = await load_hours_map(db)
+    base_hours_by_cycle = await _load_hours_by_cycle(db)
 
     # Running state
     weekly_hours: dict[tuple[str, int], float] = defaultdict(float)  # (emp_id, week_num) -> hours
+    weekly_hours.update(await _load_weekly_actual_hours(query_start, query_end))
+    biweekly_shifts: dict[tuple[str, date], int] = defaultdict(int)
     # Track shifts assigned per day per employee for rest-window enforcement
     daily_shifts: dict[tuple[str, date], list[tuple[date, ShiftLabel]]] = defaultdict(list)
 
@@ -160,8 +226,9 @@ async def generate_monthly_schedule(
                             shift_label=shift_label,
                             week_num=week_num,
                             weekly_hours=weekly_hours,
+                            biweekly_shifts=biweekly_shifts,
                             daily_shifts=daily_shifts,
-                            base_hours_map=base_hours_map,
+                            base_hours_by_cycle=base_hours_by_cycle,
                             scoring_config=scoring_config,
                             settings=settings,
                             db=db,
@@ -186,6 +253,9 @@ async def generate_monthly_schedule(
                         entries_created += 1
 
                         weekly_hours[(emp_id, week_num)] += SHIFT_DURATION_HOURS
+                        biweekly_shifts[
+                            (emp_id, _biweekly_cycle_start(current_date))
+                        ] += 1
                         daily_shifts[(emp_id, current_date)].append(
                             (current_date, shift_label)
                         )
@@ -270,11 +340,14 @@ async def regenerate_week_schedule(
     # Pre-seed running state from preserved entries so hour budgets & rest
     # windows account for already-accepted shifts.
     weekly_hours: dict[tuple[str, int], float] = defaultdict(float)
+    weekly_hours.update(await _load_weekly_actual_hours(week_start, week_end))
+    biweekly_shifts: dict[tuple[str, date], int] = defaultdict(int)
     daily_shifts: dict[tuple[str, date], list[tuple[date, ShiftLabel]]] = defaultdict(list)
     for e in preserved:
         label = e.shift_label if isinstance(e.shift_label, ShiftLabel) else ShiftLabel(e.shift_label.value)
         wk = e.shift_date.isocalendar()[1]
         weekly_hours[(e.employee_id, wk)] += SHIFT_DURATION_HOURS
+        biweekly_shifts[(e.employee_id, _biweekly_cycle_start(e.shift_date))] += 1
         daily_shifts[(e.employee_id, e.shift_date)].append((e.shift_date, label))
 
     # Load units
@@ -305,7 +378,7 @@ async def regenerate_week_schedule(
         preserved_counts[(e.shift_date, e.unit_id, label)][bucket] += 1
 
     scoring_config = load_scoring_config(settings.scoring_weights_path)
-    base_hours_map = await load_hours_map(db)
+    base_hours_by_cycle = await _load_hours_by_cycle(db)
 
     entries_created = 0
     warnings: list[str] = []
@@ -357,8 +430,9 @@ async def regenerate_week_schedule(
                             shift_label=shift_label,
                             week_num=week_num,
                             weekly_hours=weekly_hours,
+                            biweekly_shifts=biweekly_shifts,
                             daily_shifts=daily_shifts,
-                            base_hours_map=base_hours_map,
+                            base_hours_by_cycle=base_hours_by_cycle,
                             scoring_config=scoring_config,
                             settings=settings,
                             db=db,
@@ -383,6 +457,9 @@ async def regenerate_week_schedule(
                         entries_created += 1
 
                         weekly_hours[(emp_id, week_num)] += SHIFT_DURATION_HOURS
+                        biweekly_shifts[
+                            (emp_id, _biweekly_cycle_start(current_date))
+                        ] += 1
                         daily_shifts[(emp_id, current_date)].append(
                             (current_date, shift_label)
                         )
@@ -440,11 +517,14 @@ async def regenerate_month_schedule(
         await db.execute(delete(ScheduleEntry).where(ScheduleEntry.id.in_(removable_ids)))
 
     weekly_hours: dict[tuple[str, int], float] = defaultdict(float)
+    weekly_hours.update(await _load_weekly_actual_hours(query_start, query_end))
+    biweekly_shifts: dict[tuple[str, date], int] = defaultdict(int)
     daily_shifts: dict[tuple[str, date], list[tuple[date, ShiftLabel]]] = defaultdict(list)
     for e in preserved:
         label = e.shift_label if isinstance(e.shift_label, ShiftLabel) else ShiftLabel(e.shift_label.value)
         wk = e.shift_date.isocalendar()[1]
         weekly_hours[(e.employee_id, wk)] += SHIFT_DURATION_HOURS
+        biweekly_shifts[(e.employee_id, _biweekly_cycle_start(e.shift_date))] += 1
         daily_shifts[(e.employee_id, e.shift_date)].append((e.shift_date, label))
 
     units_result = await db.execute(select(Unit).where(Unit.is_active == True))
@@ -474,7 +554,7 @@ async def regenerate_month_schedule(
         preserved_counts[(e.shift_date, e.unit_id, label)][bucket] += 1
 
     scoring_config = load_scoring_config(settings.scoring_weights_path)
-    base_hours_map = await load_hours_map(db)
+    base_hours_by_cycle = await _load_hours_by_cycle(db)
 
     entries_created = 0
     warnings: list[str] = []
@@ -526,8 +606,9 @@ async def regenerate_month_schedule(
                             shift_label=shift_label,
                             week_num=week_num,
                             weekly_hours=weekly_hours,
+                            biweekly_shifts=biweekly_shifts,
                             daily_shifts=daily_shifts,
-                            base_hours_map=base_hours_map,
+                            base_hours_by_cycle=base_hours_by_cycle,
                             scoring_config=scoring_config,
                             settings=settings,
                             db=db,
@@ -552,6 +633,9 @@ async def regenerate_month_schedule(
                         entries_created += 1
 
                         weekly_hours[(emp_id, week_num)] += SHIFT_DURATION_HOURS
+                        biweekly_shifts[
+                            (emp_id, _biweekly_cycle_start(current_date))
+                        ] += 1
                         daily_shifts[(emp_id, current_date)].append(
                             (current_date, shift_label)
                         )
@@ -595,8 +679,9 @@ def _assign_one(
     shift_label: ShiftLabel,
     week_num: int,
     weekly_hours: dict[tuple[str, int], float],
+    biweekly_shifts: dict[tuple[str, date], int],
     daily_shifts: dict[tuple[str, date], list[tuple[date, ShiftLabel]]],
-    base_hours_map: dict,
+    base_hours_by_cycle: dict[tuple[str, date], HoursLedger],
     scoring_config,
     settings: Settings,
     db: AsyncSession,
@@ -645,19 +730,41 @@ def _assign_one(
         target_label=shift_label,
     )
 
-    # Additional: filter by weekly hours budget
-    survivors = []
+    # Additional: prefer candidates who can take the shift without triggering
+    # the overtime rule for their role. If coverage requires it, fall back to
+    # the broader scheduling cap rather than leaving the slot unfilled.
+    safe_survivors = []
+    fallback_survivors = []
     for cand in filter_result.passed:
         emp_id = cand.employee_id
         current_weekly = weekly_hours.get((emp_id, week_num), 0.0)
-        if cand.employment_class == "FT":
-            max_hours = FT_WEEKLY_MAX
-        elif cand.employment_class == "PER_DIEM":
-            max_hours = PER_DIEM_WEEKLY_MAX
-        else:
-            max_hours = PT_WEEKLY_MAX
+        max_hours = _weekly_max_for(cand)
         if current_weekly + SHIFT_DURATION_HOURS <= max_hours:
-            survivors.append(cand)
+            fallback_survivors.append(cand)
+
+            if cand.license == LicenseType.RN:
+                cycle_start = _biweekly_cycle_start(current_date)
+                base_hours = base_hours_by_cycle.get((emp_id, cycle_start))
+                existing_biweekly_shifts = (
+                    base_hours.shift_count_this_biweek if base_hours else 0
+                ) + biweekly_shifts.get((emp_id, cycle_start), 0)
+                would_daily_ot = is_rn_daily_ot(
+                    employee_shifts_map.get(emp_id, []),
+                    current_date,
+                    shift_label,
+                )
+                if (
+                    not would_daily_ot
+                    and existing_biweekly_shifts + 1 <= BIWEEKLY_SHIFT_OT_THRESHOLD
+                ):
+                    safe_survivors.append(cand)
+            elif current_weekly + SHIFT_DURATION_HOURS <= min(
+                max_hours,
+                WEEKLY_OT_THRESHOLD_HOURS,
+            ):
+                safe_survivors.append(cand)
+
+    survivors = safe_survivors or fallback_survivors
 
     if not survivors:
         return None
@@ -667,9 +774,24 @@ def _assign_one(
     best_score = -999.0
 
     for cand in survivors:
-        hours_rec = base_hours_map.get(cand.employee_id)
-        hours_this_cycle = (hours_rec.hours_this_cycle if hours_rec else 0.0) + weekly_hours.get((cand.employee_id, week_num), 0.0)
-        shift_count_biweek = (hours_rec.shift_count_this_biweek if hours_rec else 0)
+        if cand.license == LicenseType.RN:
+            cycle_start = _biweekly_cycle_start(current_date)
+            hours_rec = base_hours_by_cycle.get((cand.employee_id, cycle_start))
+            assigned_cycle_shifts = biweekly_shifts.get(
+                (cand.employee_id, cycle_start),
+                0,
+            )
+            hours_this_cycle = (
+                (hours_rec.hours_this_cycle if hours_rec else 0.0)
+                + assigned_cycle_shifts * SHIFT_DURATION_HOURS
+            )
+            shift_count_biweek = (
+                (hours_rec.shift_count_this_biweek if hours_rec else 0)
+                + assigned_cycle_shifts
+            )
+        else:
+            hours_this_cycle = weekly_hours.get((cand.employee_id, week_num), 0.0)
+            shift_count_biweek = 0
 
         employee_shifts = employee_shifts_map.get(cand.employee_id, [])
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.common import ShiftLabel
 
@@ -125,6 +125,27 @@ class WorkHoursSummaryOut(BaseModel):
     employees_in_ot: int
     employees_high_ot: int
     total_float_shifts: int
+    # Counts derived from role-specific OT periods, not the calendar month.
+    # Daily OT is RN-specific (a second shift in the same operational day);
+    # biweekly OT follows the RN shift limit and non-RN cycle budget.
+    daily_ot_count: int = 0
+    biweekly_ot_count: int = 0
+
+
+class WorkloadPeriodOut(BaseModel):
+    period_type: str
+    start_date: date
+    end_date: date
+    worked_hours: float = 0.0
+    worked_shifts: int = 0
+    scheduled_hours: float = 0.0
+    scheduled_shifts: int = 0
+    projected_hours: float = 0.0
+    projected_shifts: int = 0
+    threshold_hours: float = 0.0
+    remaining_hours: float = 0.0
+    overtime_hours: float = 0.0
+    double_shift_days: int = 0
 
 
 class EmployeeWorkHoursOut(BaseModel):
@@ -133,10 +154,15 @@ class EmployeeWorkHoursOut(BaseModel):
     license: str
     employment_class: str
     home_unit_id: Optional[str] = None
+    # NOTE: scheduled_hours remains a MONTHLY metric for backwards
+    # compatibility with existing consumers. The workload-monitor bar uses
+    # the *_this_cycle fields below, which are biweekly-scoped.
     current_cycle_hours: float
     current_cycle_shifts: int
     scheduled_hours: float
     scheduled_shifts: int
+    worked_hours_this_month: float = 0.0
+    worked_shifts_this_month: int = 0
     peak_week_hours: float
     projected_overtime_hours: float
     peak_biweekly_shifts: int
@@ -149,6 +175,19 @@ class EmployeeWorkHoursOut(BaseModel):
     scheduled_unit_ids: List[str] = []
     overtime_status: str
     overtime_detail: str
+    # New biweekly-cycle fields powering the three-segment workload bar.
+    # ``worked_hours_this_cycle`` comes from HoursLedger (Kronos-derived);
+    # ``scheduled_hours_this_cycle`` is forward-looking schedule entries
+    # within the cycle window that haven't been clocked yet;
+    # ``budget_hours_this_cycle`` is the employment-class budget (FT 80 /
+    # PT 60 / PD 40). All optional so the API stays backwards compatible.
+    worked_hours_this_cycle: float = 0.0
+    scheduled_hours_this_cycle: float = 0.0
+    budget_hours_this_cycle: float = 80.0
+    cycle_start_date: Optional[date] = None
+    cycle_end_date: Optional[date] = None
+    weekly_periods: List[WorkloadPeriodOut] = Field(default_factory=list)
+    biweekly_periods: List[WorkloadPeriodOut] = Field(default_factory=list)
 
 
 class WorkHoursSnapshotOut(BaseModel):

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -22,7 +22,6 @@ import {
   useUnits,
 } from "@/lib/queries";
 import type { CalendarLoadingScope, MonthlySchedule, ShiftSlot } from "@/lib/types";
-import { useWorkHoursMonitor } from "@/providers/work-hours-provider";
 
 function defaultWeekStart(today = new Date()): string {
   const d = new Date(today);
@@ -73,8 +72,6 @@ export default function SchedulePage() {
   const [autogenScope, setAutogenScope] = useState<CalendarLoadingScope | null>(
     null,
   );
-  const { setScope } = useWorkHoursMonitor();
-
   const previousScope = useMemo(() => addMonths(year, month, -1), [month, year]);
   const nextScope = useMemo(() => addMonths(year, month, 1), [month, year]);
   const { data, isLoading } = useMonthlySchedule(year, month);
@@ -143,10 +140,6 @@ export default function SchedulePage() {
       },
     );
   }
-
-  useEffect(() => {
-    setScope({ year, month });
-  }, [month, year, setScope]);
 
   const handleAutogenScope = useCallback(
     (scope: CalendarLoadingScope | null) => setAutogenScope(scope),

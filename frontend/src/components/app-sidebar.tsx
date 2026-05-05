@@ -57,8 +57,21 @@ export function AppSidebar() {
           );
         })}
       </nav>
-      <div className="p-4 border-t text-xs text-muted-foreground">
-        v0.1.0
+      <div className="p-3 border-t text-xs">
+        <p className="font-semibold uppercase tracking-wider text-[10px] text-muted-foreground mb-1.5">
+          Future Production Modules
+        </p>
+        <ul className="space-y-0.5 text-[11px] text-muted-foreground/80 leading-tight">
+          <li>· HR / SmartLinx integration</li>
+          <li>· PTO accrual sync</li>
+          <li>· Staffing sheet printing</li>
+          <li>· Compliance reporting</li>
+          <li>· Time-clock / payroll sync</li>
+          <li>· In-shift emergency workflow</li>
+        </ul>
+      </div>
+      <div className="p-3 border-t text-[10px] text-muted-foreground">
+        v0.1.0 · Demo build
       </div>
     </aside>
   );

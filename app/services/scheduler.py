@@ -124,16 +124,28 @@ async def generate_monthly_schedule(
     settings: Settings,
     staff_count_override: int | None = None,
     employee_pool: list[str] | None = None,
+    period_start: date | None = None,
+    period_end: date | None = None,
 ) -> ScheduleGenerationResult:
-    """Generate a full month's schedule, writing ScheduleEntry rows.
+    """Generate a schedule for either a calendar month or a 4-week period.
 
-    When ``employee_pool`` is provided, only those employees are eligible
-    for assignment. ``staff_count_override`` is ignored in that case
-    (pool is the source of truth)."""
+    By default the function generates the full calendar month identified by
+    ``year``/``month``. When ``period_start`` and ``period_end`` are provided
+    they override the month bounds — every day in the inclusive range is
+    iterated. ``year``/``month`` are still used by callers downstream
+    (logging, response payload).
 
-    _, last_day = calendar.monthrange(year, month)
-    first = date(year, month, 1)
-    last = date(year, month, last_day)
+    When ``employee_pool`` is provided, only those employees are eligible for
+    assignment. ``staff_count_override`` is ignored in that case (pool is the
+    source of truth)."""
+
+    if period_start is not None and period_end is not None:
+        first = period_start
+        last = period_end
+    else:
+        _, last_day = calendar.monthrange(year, month)
+        first = date(year, month, 1)
+        last = date(year, month, last_day)
     query_start = first - timedelta(days=first.isocalendar().weekday - 1)
     query_end = last + timedelta(days=7 - last.isocalendar().weekday)
 
@@ -195,8 +207,9 @@ async def generate_monthly_schedule(
     entries_created = 0
     warnings: list[str] = []
 
-    for d in range(1, last_day + 1):
-        current_date = date(year, month, d)
+    total_days = (last - first).days + 1
+    for offset in range(total_days):
+        current_date = first + timedelta(days=offset)
         week_num = current_date.isocalendar()[1]
 
         for unit in units:

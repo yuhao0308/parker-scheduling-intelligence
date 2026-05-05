@@ -292,8 +292,17 @@ async def autogen_submit_month(
         db=db,
         settings=settings,
         employee_pool=req.employee_pool,
+        period_start=req.period_start,
+        period_end=req.period_end,
     )
-    sent = await send_month_confirmations(db, req.year, req.month, unit_ids=None)
+    sent = await send_month_confirmations(
+        db,
+        req.year,
+        req.month,
+        unit_ids=None,
+        period_start=req.period_start,
+        period_end=req.period_end,
+    )
     return MonthlyAutogenSubmitResult(
         year=req.year,
         month=req.month,

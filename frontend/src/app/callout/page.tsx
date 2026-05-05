@@ -9,6 +9,7 @@ import { CalloutForm } from "@/components/callout-form";
 import { CandidateList } from "@/components/candidate-list";
 import { FilterStatsBadge } from "@/components/filter-stats-badge";
 import { OutreachConsole } from "@/components/callout/outreach-console";
+import { PtoTab } from "@/components/callout/pto-tab";
 import { useCalloutJob, useSendOutreach, useSubmitCallout } from "@/lib/queries";
 import {
   AlertCircle,
@@ -437,9 +438,15 @@ export function jobToResult(job: CalloutJobResponse): CalloutResponse | null {
 
 /* ── Main page ──────────────────────────────────────────────────────────── */
 
+type CalloutSection = "callout" | "pto";
+
 function CalloutPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const tabParam = searchParams.get("tab");
+  const initialTab: CalloutSection = tabParam === "pto" ? "pto" : "callout";
+  const [section, setSection] = useState<CalloutSection>(initialTab);
 
   const calloutIdParam = useMemo(() => {
     const raw = searchParams.get("callout_id");
@@ -591,11 +598,38 @@ function CalloutPageInner() {
         </div>
       </div>
 
-      {/* Step indicator */}
-      <StepIndicator step={step} />
+      {/* Section tabs: Call-Out (existing flow) vs PTO / Leave (new) */}
+      <div className="flex border-b">
+        <SectionTab
+          active={section === "callout"}
+          onClick={() => setSection("callout")}
+          label="Call-Out"
+          hint="Same-day replacement"
+        />
+        <SectionTab
+          active={section === "pto"}
+          onClick={() => setSection("pto")}
+          label="PTO / Leave"
+          hint="Approve planned absences"
+        />
+      </div>
 
-      {/* Content */}
-      {submitted ? (
+      {section === "pto" ? (
+        <PtoTab />
+      ) : (
+        <>
+          {/* Step indicator */}
+          <StepIndicator step={step} />
+
+          {/* Content */}
+          {renderCalloutSection()}
+        </>
+      )}
+    </div>
+  );
+
+  function renderCalloutSection() {
+    return submitted ? (
         <SuccessCard
           onReset={handleReset}
           unitName={result?.unit_name}
@@ -639,7 +673,34 @@ function CalloutPageInner() {
               : undefined
           }
         />
+      );
+  }
+}
+
+function SectionTab({
+  active,
+  onClick,
+  label,
+  hint,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+        active
+          ? "border-primary text-foreground"
+          : "border-transparent text-muted-foreground hover:text-foreground",
       )}
-    </div>
+    >
+      <div>{label}</div>
+      <div className="text-[10px] font-normal text-muted-foreground">{hint}</div>
+    </button>
   );
 }

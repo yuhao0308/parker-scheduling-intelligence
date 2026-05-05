@@ -341,6 +341,11 @@ export interface MonthlyAutogenSubmitRequest {
   year: number;
   month: number;
   employee_pool: string[];
+  /** ISO date (YYYY-MM-DD). When provided with period_end, autogen runs over
+   *  the inclusive 28-day rotation instead of the calendar month. */
+  period_start?: string;
+  /** ISO date (YYYY-MM-DD). Inclusive end of the 4-week period. */
+  period_end?: string;
 }
 
 export interface MonthlyAutogenSubmitResult {

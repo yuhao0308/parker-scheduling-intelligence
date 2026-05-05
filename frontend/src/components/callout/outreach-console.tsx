@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
+  useDemoConfig,
   useOutreach,
   useRespondOutreach,
   useSendOutreach,
@@ -49,6 +50,7 @@ export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
   const { data: notifications = [] } = useOutreach(result.callout_id);
   const sendMutation = useSendOutreach();
   const respondMutation = useRespondOutreach();
+  const { data: demoConfig } = useDemoConfig();
 
   const [deprioritized, setDeprioritized] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -161,6 +163,18 @@ export function OutreachConsole({ result, onAccepted }: OutreachConsoleProps) {
             <p className="text-xs text-muted-foreground -mt-1">
               First to accept takes the shift — the rest are auto-canceled.
             </p>
+            {/*
+              Response window is hardcoded short for the demo so reviewers can
+              see timeouts fire quickly. Production should pull this value from
+              per-facility configuration (e.g., a 2-hour minimum is typical for
+              same-day call-out policy).
+            */}
+            {demoConfig && (
+              <p className="text-[11px] text-muted-foreground -mt-1 italic">
+                Demo response window: {demoConfig.outreach_timeout_seconds}s ·
+                Production: configurable per facility policy (e.g., 2 hours)
+              </p>
+            )}
             {pendings.map((p) => (
               <PendingOutreachRow
                 key={p.notification_id}

@@ -283,6 +283,12 @@ class MonthlyAutogenSubmitRequest(BaseModel):
     year: int
     month: int
     employee_pool: List[str]
+    # Optional 4-week (28-day) period override. When both are provided, the
+    # autogen runs across the inclusive [period_start, period_end] range
+    # instead of the calendar month identified by year/month. The
+    # year/month fields are still used for response payload labeling.
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -290,6 +296,8 @@ class MonthlyAutogenSubmitRequest(BaseModel):
                 "year": 2026,
                 "month": 4,
                 "employee_pool": ["RN001", "CNA007"],
+                "period_start": "2026-04-12",
+                "period_end": "2026-05-09",
             }
         }
     )

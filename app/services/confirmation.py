@@ -110,9 +110,18 @@ async def send_month_confirmations(
     year: int,
     month: int,
     unit_ids: Optional[List[str]],
+    period_start: Optional[date] = None,
+    period_end: Optional[date] = None,
 ) -> SendConfirmationsResult:
-    """Flip UNSENT monthly entries to PENDING and create notifications."""
-    start, end = _month_range(year, month)
+    """Flip UNSENT entries to PENDING and create notifications.
+
+    By default the inclusive range is the calendar month identified by
+    ``year``/``month``. When ``period_start`` and ``period_end`` are provided
+    they override that range — useful for the 4-week (28-day) rotation flow."""
+    if period_start is not None and period_end is not None:
+        start, end = period_start, period_end
+    else:
+        start, end = _month_range(year, month)
 
     query = select(ScheduleEntry).where(
         and_(

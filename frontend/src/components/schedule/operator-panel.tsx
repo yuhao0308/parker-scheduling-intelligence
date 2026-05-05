@@ -4,31 +4,36 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { AutoGenTab } from "@/components/schedule/auto-gen-tab";
 import { CalloutTab } from "@/components/schedule/callout-tab";
+import { IndividualScheduleTab } from "@/components/schedule/individual-schedule-tab";
 import type { CalendarLoadingScope } from "@/lib/types";
 
-type PanelMode = "autogen" | "callout";
+type PanelMode = "autogen" | "callout" | "individual";
 
 interface OperatorPanelProps {
   year: number;
   month: number;
-  weekStart: string;
-  onWeekStartChange: (value: string) => void;
+  periodStart: Date;
+  periodEnd: Date;
   onLoadingScopeChange?: (scope: CalendarLoadingScope | null) => void;
+  selectedEmployeeIds: Set<string>;
+  onSelectedEmployeeIdsChange: (next: Set<string>) => void;
 }
 
 /**
  * Right-column operator cockpit.
  *
- * Implements the supervisor mockup's two-tab split: Auto Gen (weekly schedule
- * confirmations) and Callout (same-day replacements). Both tabs live inside a
- * single card so the schedule calendar stays the visual anchor on the left.
+ * Three tabs: Auto Gen (weekly/monthly schedule confirmations), Callout
+ * (same-day replacements), and Individual (filter the calendar to one or
+ * more employees).
  */
 export function OperatorPanel({
   year,
   month,
-  weekStart,
-  onWeekStartChange,
+  periodStart,
+  periodEnd,
   onLoadingScopeChange,
+  selectedEmployeeIds,
+  onSelectedEmployeeIdsChange,
 }: OperatorPanelProps) {
   const [mode, setMode] = useState<PanelMode>("autogen");
 
@@ -48,6 +53,17 @@ export function OperatorPanel({
           label="Callout"
           hint="Same-day replacements"
         />
+        <TabButton
+          active={mode === "individual"}
+          onClick={() => setMode("individual")}
+          label="Individual"
+          hint="Filter by employee"
+          badge={
+            selectedEmployeeIds.size > 0
+              ? String(selectedEmployeeIds.size)
+              : undefined
+          }
+        />
       </div>
 
       {/* Tab body */}
@@ -56,12 +72,17 @@ export function OperatorPanel({
           <AutoGenTab
             year={year}
             month={month}
-            weekStart={weekStart}
-            onWeekStartChange={onWeekStartChange}
+            periodStart={periodStart}
+            periodEnd={periodEnd}
             onLoadingScopeChange={onLoadingScopeChange}
           />
-        ) : (
+        ) : mode === "callout" ? (
           <CalloutTab year={year} month={month} />
+        ) : (
+          <IndividualScheduleTab
+            selectedEmployeeIds={selectedEmployeeIds}
+            onSelectedEmployeeIdsChange={onSelectedEmployeeIdsChange}
+          />
         )}
       </div>
     </div>
@@ -73,24 +94,33 @@ function TabButton({
   onClick,
   label,
   hint,
+  badge,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   hint: string;
+  badge?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex-1 px-3 py-2 text-sm font-medium border-b-2 transition-colors",
+        "flex-1 px-3 py-2 text-sm font-medium border-b-2 transition-colors relative",
         active
           ? "border-primary text-foreground bg-background"
           : "border-transparent text-muted-foreground hover:text-foreground",
       )}
     >
-      <div>{label}</div>
+      <div className="flex items-center justify-center gap-1.5">
+        <span>{label}</span>
+        {badge && (
+          <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
+            {badge}
+          </span>
+        )}
+      </div>
       <div className="text-[10px] font-normal text-muted-foreground">{hint}</div>
     </button>
   );

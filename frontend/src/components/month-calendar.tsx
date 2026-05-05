@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { CalendarOff, Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, MONTH_SHORT } from "@/lib/utils";
 import { NumberPop } from "@/components/number-pop";
 import { withViewTransition } from "@/lib/view-transition";
 import type {
@@ -60,8 +60,17 @@ interface MonthCalendarProps {
   onSlotClick: (slots: ShiftSlot[]) => void;
   onDayClick: (date: string, slots: ShiftSlot[]) => void;
   selectedUnit: string | null;
+  // When non-empty, the calendar shows only shifts assigned to one of these
+  // employees ("Individual Schedule" view). When empty / undefined, shows the
+  // full facility schedule.
+  selectedEmployeeIds?: Set<string>;
   statusFilter: StatusFilter;
   today: Date;
+  // When provided, the calendar renders exactly 28 days (4 rows × 7 cols)
+  // starting at `period.start` (a Sunday). Every cell is in-period — there is
+  // no greyed adjacent-month overflow. The component still pulls per-day data
+  // from `data` and `adjacentData` since the underlying API is month-organized.
+  period?: { start: Date; end: Date };
 }
 
 interface PillRow {
@@ -82,22 +91,60 @@ interface CalendarCell {
 function aggregateDayStatus(
   slots: ShiftSlot[],
   selectedUnit: string | null,
+  selectedEmployeeIds?: Set<string>,
 ): PillRow[] {
+  const isIndividualView =
+    selectedEmployeeIds !== undefined && selectedEmployeeIds.size > 0;
+
   return SHIFT_ORDER.map(({ key, label }) => {
-    const scoped = slots.filter(
+    let scoped = slots.filter(
       (s) => s.shift_label === key && (!selectedUnit || s.unit_id === selectedUnit),
     );
-    // Count only ACCEPTED invitees as real coverage. PENDING / DECLINED /
-    // UNSENT shouldn't paint the pill green — they haven't confirmed the shift.
-    const assigned = scoped.reduce(
-      (n, s) =>
-        n +
-        s.assigned_employees.filter(
-          (e) => e.confirmation_status === "ACCEPTED",
-        ).length,
-      0,
-    );
-    const required = scoped.reduce((n, s) => n + s.required_count, 0);
+
+    if (isIndividualView) {
+      // Keep only slots that include at least one selected employee.
+      scoped = scoped.filter((s) =>
+        s.assigned_employees.some((e) => selectedEmployeeIds!.has(e.employee_id)),
+      );
+    }
+
+    let assigned: number;
+    let required: number;
+    if (isIndividualView) {
+      // Individual view: count selected employees' confirmed assignments
+      // and treat that count as the "required" target so a pill can render
+      // green (single shift = 1/1) instead of perpetually amber.
+      assigned = scoped.reduce(
+        (n, s) =>
+          n +
+          s.assigned_employees.filter(
+            (e) =>
+              selectedEmployeeIds!.has(e.employee_id) &&
+              e.confirmation_status === "ACCEPTED",
+          ).length,
+        0,
+      );
+      required = scoped.reduce(
+        (n, s) =>
+          n +
+          s.assigned_employees.filter((e) =>
+            selectedEmployeeIds!.has(e.employee_id),
+          ).length,
+        0,
+      );
+    } else {
+      // Count only ACCEPTED invitees as real coverage. PENDING / DECLINED /
+      // UNSENT shouldn't paint the pill green — they haven't confirmed the shift.
+      assigned = scoped.reduce(
+        (n, s) =>
+          n +
+          s.assigned_employees.filter(
+            (e) => e.confirmation_status === "ACCEPTED",
+          ).length,
+        0,
+      );
+      required = scoped.reduce((n, s) => n + s.required_count, 0);
+    }
 
     let status: ShiftSlotStatus;
     if (assigned === 0 && required > 0) status = "unassigned";
@@ -131,8 +178,10 @@ export function MonthCalendar({
   onSlotClick,
   onDayClick,
   selectedUnit,
+  selectedEmployeeIds,
   statusFilter,
   today,
+  period,
 }: MonthCalendarProps) {
   // Which pill, if any, currently owns the shared `view-transition-name`.
   // Set just before opening the detail dialog so the browser can morph the
@@ -159,62 +208,101 @@ export function MonthCalendar({
     );
   }
 
-  if (!data || data.days.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 h-96 text-muted-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300">
-        <CalendarOff className="h-7 w-7 motion-safe:animate-breathe" />
-        <span>No schedule data for this month.</span>
-      </div>
-    );
-  }
-
-  const firstDate = new Date(data.days[0].date + "T00:00:00");
-  const startDow = firstDate.getDay();
-  const totalDays = data.days.length;
-  const gridMonth = firstDate.getMonth();
-  const gridYear = firstDate.getFullYear();
-
+  // Merge any month payloads into a single date-keyed lookup so the 28-day
+  // window can reach into adjacent months naturally.
   const daysByDate = new Map<string, DaySchedule>();
   for (const schedule of [data, ...adjacentData]) {
+    if (!schedule) continue;
     for (const day of schedule.days) {
       daysByDate.set(day.date, day);
     }
   }
 
+  const hasAnyData = daysByDate.size > 0;
+
   const cells: CalendarCell[] = [];
-  for (let i = 0; i < startDow; i++) {
-    const date = new Date(gridYear, gridMonth, i - startDow + 1);
-    cells.push({
-      date,
-      day: daysByDate.get(formatDateKey(date)) ?? null,
-      isCurrentMonth: false,
-    });
+  if (period) {
+    // 4-week (28-day) view: always 4 rows × 7 cols starting at period.start.
+    // Every cell is in-period; we no longer dim "outside the month" days.
+    for (let i = 0; i < 28; i++) {
+      const date = new Date(period.start);
+      date.setDate(period.start.getDate() + i);
+      const key = formatDateKey(date);
+      cells.push({
+        date,
+        day: daysByDate.get(key) ?? null,
+        isCurrentMonth: true,
+      });
+    }
+  } else {
+    // Legacy month view (kept for any other callers / tests).
+    if (!data || data.days.length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center gap-2 h-96 text-muted-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300">
+          <CalendarOff className="h-7 w-7 motion-safe:animate-breathe" />
+          <span>No schedule data for this month.</span>
+        </div>
+      );
+    }
+    const firstDate = new Date(data.days[0].date + "T00:00:00");
+    const startDow = firstDate.getDay();
+    const totalDays = data.days.length;
+    const gridMonth = firstDate.getMonth();
+    const gridYear = firstDate.getFullYear();
+    for (let i = 0; i < startDow; i++) {
+      const date = new Date(gridYear, gridMonth, i - startDow + 1);
+      cells.push({
+        date,
+        day: daysByDate.get(formatDateKey(date)) ?? null,
+        isCurrentMonth: false,
+      });
+    }
+    for (let d = 0; d < totalDays; d++) {
+      cells.push({
+        date: new Date(data.days[d].date + "T00:00:00"),
+        day: data.days[d],
+        isCurrentMonth: true,
+      });
+    }
+    while (cells.length % 7 !== 0) {
+      const trailingDay = totalDays + (cells.length - startDow - totalDays) + 1;
+      const date = new Date(gridYear, gridMonth, trailingDay);
+      cells.push({
+        date,
+        day: daysByDate.get(formatDateKey(date)) ?? null,
+        isCurrentMonth: false,
+      });
+    }
   }
-  for (let d = 0; d < totalDays; d++) {
-    cells.push({
-      date: new Date(data.days[d].date + "T00:00:00"),
-      day: data.days[d],
-      isCurrentMonth: true,
-    });
-  }
-  while (cells.length % 7 !== 0) {
-    const trailingDay = totalDays + (cells.length - startDow - totalDays) + 1;
-    const date = new Date(gridYear, gridMonth, trailingDay);
-    cells.push({
-      date,
-      day: daysByDate.get(formatDateKey(date)) ?? null,
-      isCurrentMonth: false,
-    });
+
+  // Empty-state for the 4-week view: only render when no data has loaded yet
+  // for any month covered by the period.
+  if (period && !hasAnyData) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 h-96 text-muted-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-300">
+        <CalendarOff className="h-7 w-7 motion-safe:animate-breathe" />
+        <span>No schedule data for this period.</span>
+      </div>
+    );
   }
 
   const totalRows = cells.length / 7;
-  // Translate the active loading scope into a [startRow, endRow] range
-  // (1-indexed for CSS grid). For week scope, find the row containing the
-  // anchor date; if it doesn't intersect this view, fall through to month.
+  // Loading overlay scope. For 4-week view, any non-null scope highlights the
+  // entire grid (the grid IS the period, and the underlying API is monthly).
   let loadingRowStart: number | null = null;
   let loadingRowEnd: number | null = null;
-  if (loadingScope?.kind === "month") {
-    if (loadingScope.year === gridYear && loadingScope.month === gridMonth + 1) {
+  if (period) {
+    if (loadingScope) {
+      loadingRowStart = 1;
+      loadingRowEnd = totalRows + 1;
+    }
+  } else if (loadingScope?.kind === "month") {
+    const firstCell = cells[0]?.date;
+    if (
+      firstCell &&
+      loadingScope.year === firstCell.getFullYear() &&
+      loadingScope.month === firstCell.getMonth() + 1
+    ) {
       loadingRowStart = 1;
       loadingRowEnd = totalRows + 1;
     }
@@ -253,11 +341,18 @@ export function MonthCalendar({
         ))}
       </div>
 
-      {/* Header row */}
+      {/* Header row — rotated so the first column matches the rotation
+          start. In a 4-week period the columns are not necessarily Sun-first
+          (the rotation epoch is Jan 1, 2026 which is a Thursday). */}
       <div className="grid grid-cols-7 border-b border-t">
-        {WEEKDAYS.map((d) => (
+        {(period
+          ? Array.from({ length: 7 }, (_, i) =>
+              WEEKDAYS[(period.start.getDay() + i) % 7],
+            )
+          : WEEKDAYS
+        ).map((d, i) => (
           <div
-            key={d}
+            key={`${d}-${i}`}
             className="text-center text-[11px] font-semibold tracking-wider text-muted-foreground py-2"
           >
             {d}
@@ -272,7 +367,11 @@ export function MonthCalendar({
           const day = cell.day;
 
           if (!cell.isCurrentMonth) {
-            const rows = aggregateDayStatus(day?.slots ?? [], selectedUnit);
+            const rows = aggregateDayStatus(
+              day?.slots ?? [],
+              selectedUnit,
+              selectedEmployeeIds,
+            );
             return (
               <div
                 key={`adjacent-${formatDateKey(cell.date)}`}
@@ -338,12 +437,33 @@ export function MonthCalendar({
 
           const cellDate = new Date(day.date + "T00:00:00");
           const isToday = isSameDay(cellDate, today);
-          const rows = aggregateDayStatus(day.slots, selectedUnit);
+          const rows = aggregateDayStatus(
+            day.slots,
+            selectedUnit,
+            selectedEmployeeIds,
+          );
 
+          // Anchor month = the month containing period.start. Days outside
+          // that month get a subtle tone shift so the boundary is visible
+          // without dominating the cell. Day 1 of any month also gets the
+          // abbreviated month name inline so the user always knows where the
+          // boundary is.
+          const cellMonth = cell.date.getMonth();
+          const anchorMonth = period
+            ? period.start.getMonth()
+            : cellMonth;
+          const inSecondaryMonth = cellMonth !== anchorMonth;
+          const isMonthStart = dayNum === 1;
+          const dayLabel = isMonthStart
+            ? `${MONTH_SHORT[cellMonth]} 1`
+            : String(dayNum).padStart(2, "0");
           return (
             <div
               key={day.date}
-              className="min-h-32 border-r border-b p-1.5 flex flex-col gap-1"
+              className={cn(
+                "min-h-32 border-r border-b p-1.5 flex flex-col gap-1",
+                inSecondaryMonth && "bg-muted/20",
+              )}
             >
               <div className="flex items-center">
                 <button
@@ -351,15 +471,24 @@ export function MonthCalendar({
                   onClick={() => onDayClick(day.date, day.slots)}
                   aria-label={`${day.date} schedule`}
                   className={cn(
-                    "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs cursor-pointer",
+                    "inline-flex h-6 items-center justify-center rounded-full text-xs cursor-pointer tabular-nums",
                     "transition-all duration-200 ease-out hover:scale-110 active:scale-95",
+                    isMonthStart ? "px-2 font-semibold" : "w-6",
                     isToday
                       ? "bg-blue-600 text-white font-semibold hover:bg-blue-700 ring-2 ring-blue-200 ring-offset-1"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      : isMonthStart
+                        ? "bg-slate-900 text-white hover:bg-slate-800"
+                        : inSecondaryMonth
+                          ? "text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground",
                   )}
-                  title="View all shifts for this day"
+                  title={
+                    isMonthStart
+                      ? `${MONTH_SHORT[cellMonth]} 1 — start of new month`
+                      : "View all shifts for this day"
+                  }
                 >
-                  {String(dayNum).padStart(2, "0")}
+                  {dayLabel}
                 </button>
               </div>
 

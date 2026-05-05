@@ -22,15 +22,11 @@ import {
   useUnits,
 } from "@/lib/queries";
 import type { CalendarLoadingScope, MonthlySchedule, ShiftSlot } from "@/lib/types";
-
-function defaultWeekStart(today = new Date()): string {
-  const d = new Date(today);
-  d.setHours(0, 0, 0, 0);
-  const dow = d.getDay();
-  const diffToMonday = (dow + 6) % 7;
-  d.setDate(d.getDate() - diffToMonday);
-  return d.toISOString().slice(0, 10);
-}
+import {
+  formatPeriodRange,
+  getFourWeekSchedulePeriod,
+  toDateKey,
+} from "@/lib/utils";
 
 function addMonths(year: number, month: number, delta: number) {
   const d = new Date(year, month - 1 + delta, 1);
@@ -55,8 +51,20 @@ const SCENARIOS = [
 ];
 
 export default function SchedulePage() {
-  const [year, setYear] = useState(2026);
-  const [month, setMonth] = useState(4);
+  // Anchor date is the source of truth; the 4-week (28-day) period is derived
+  // from it, and `year`/`month` are kept aligned for the existing monthly
+  // schedule fetches that the calendar relies on.
+  const [anchorDate, setAnchorDate] = useState<Date>(() => {
+    // Default to a date that has demo data populated.
+    return new Date(2026, 3, 15);
+  });
+  const period = useMemo(
+    () => getFourWeekSchedulePeriod(anchorDate),
+    [anchorDate],
+  );
+  const year = period.start.getFullYear();
+  const month = period.start.getMonth() + 1;
+
   const [activeSlots, setActiveSlots] = useState<ShiftSlot[]>([]);
   const [detailOpen, setDetailOpen] = useState(false);
   const [dayDetailOpen, setDayDetailOpen] = useState(false);
@@ -66,50 +74,53 @@ export default function SchedulePage() {
   } | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [scenarioIdx, setScenarioIdx] = useState(0);
-  const [weekStart, setWeekStart] = useState(() => defaultWeekStart());
   const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [autogenScope, setAutogenScope] = useState<CalendarLoadingScope | null>(
     null,
   );
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  // Months covered by the 4-week period: anchor month, plus the month
+  // containing period.end if it differs (the 28-day window may straddle a
+  // month boundary).
+  const endYear = period.end.getFullYear();
+  const endMonth = period.end.getMonth() + 1;
+  const spansTwoMonths = endYear !== year || endMonth !== month;
   const previousScope = useMemo(() => addMonths(year, month, -1), [month, year]);
-  const nextScope = useMemo(() => addMonths(year, month, 1), [month, year]);
   const { data, isLoading } = useMonthlySchedule(year, month);
   const { data: previousMonthData } = useMonthlySchedule(
     previousScope.year,
     previousScope.month,
   );
   const { data: nextMonthData } = useMonthlySchedule(
-    nextScope.year,
-    nextScope.month,
+    spansTwoMonths ? endYear : year,
+    spansTwoMonths ? endMonth : month,
   );
   const generateMutation = useGenerateSchedule();
   const { data: units } = useUnits();
 
   const today = useMemo(() => new Date(), []);
 
-  function prevMonth() {
-    if (month === 1) {
-      setMonth(12);
-      setYear(year - 1);
-    } else {
-      setMonth(month - 1);
-    }
-  }
-
-  function nextMonth() {
-    if (month === 12) {
-      setMonth(1);
-      setYear(year + 1);
-    } else {
-      setMonth(month + 1);
-    }
+  function shiftPeriod(deltaDays: number) {
+    setAnchorDate((prev) => {
+      const next = new Date(prev);
+      next.setDate(next.getDate() + deltaDays);
+      return next;
+    });
   }
 
   function goToToday() {
-    const d = new Date();
-    setYear(d.getFullYear());
-    setMonth(d.getMonth() + 1);
+    setAnchorDate(new Date());
+  }
+
+  function handleAnchorDateChange(value: string) {
+    if (!value) return;
+    // Parse as a local date, not UTC, so the user's selected day isn't shifted.
+    const [y, m, d] = value.split("-").map((n) => parseInt(n, 10));
+    if (!y || !m || !d) return;
+    setAnchorDate(new Date(y, m - 1, d));
   }
 
   function handleSlotClick(slots: ShiftSlot[]) {
@@ -195,16 +206,38 @@ export default function SchedulePage() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-col items-end mr-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              4-Week Schedule
+            </span>
+            <span className="text-base font-semibold leading-tight">
+              {formatPeriodRange(period.start, period.end)}
+            </span>
+          </div>
+          <input
+            type="date"
+            className="text-sm border rounded-md px-2 py-1.5 bg-background"
+            value={toDateKey(anchorDate)}
+            onChange={(e) => handleAnchorDateChange(e.target.value)}
+            title="Pick any date — period snaps to the Sunday of that week"
+          />
           <Button variant="outline" size="sm" onClick={goToToday}>
             Today
           </Button>
-          <Button variant="outline" size="sm" onClick={prevMonth}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => shiftPeriod(-28)}
+            title="Previous 4-week period"
+          >
             &larr;
           </Button>
-          <span className="min-w-32 text-center text-lg font-semibold">
-            {MONTH_NAMES[month - 1]} {year}
-          </span>
-          <Button variant="outline" size="sm" onClick={nextMonth}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => shiftPeriod(28)}
+            title="Next 4-week period"
+          >
             &rarr;
           </Button>
           <Button
@@ -274,8 +307,10 @@ export default function SchedulePage() {
               onSlotClick={handleSlotClick}
               onDayClick={handleDayClick}
               selectedUnit={selectedUnit}
+              selectedEmployeeIds={selectedEmployeeIds}
               statusFilter={statusFilter}
               today={today}
+              period={period}
             />
           </CardContent>
         </Card>
@@ -284,9 +319,11 @@ export default function SchedulePage() {
           <OperatorPanel
             year={year}
             month={month}
-            weekStart={weekStart}
-            onWeekStartChange={setWeekStart}
+            periodStart={period.start}
+            periodEnd={period.end}
             onLoadingScopeChange={handleAutogenScope}
+            selectedEmployeeIds={selectedEmployeeIds}
+            onSelectedEmployeeIdsChange={setSelectedEmployeeIds}
           />
         </div>
       </div>

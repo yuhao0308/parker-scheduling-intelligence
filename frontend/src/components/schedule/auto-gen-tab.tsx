@@ -3,34 +3,28 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ShiftRow } from "@/components/schedule/shift-row";
 import { StatusOrb } from "@/components/schedule/status-orb";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
-  CalendarDays,
-  CalendarRange,
   CheckCircle2,
   Search,
   Sparkles,
-  type LucideIcon,
   X,
   XCircle,
 } from "lucide-react";
 import {
   useAllActiveStaff,
-  useAutogenSubmit,
   useAutogenSubmitMonth,
-  useCommitDecisions,
   useCommitMonthlyDecisions,
-  useConfirmations,
   useDemoConfig,
   useMonthlyConfirmations,
   useMonthlySchedule,
   useRemoveEntry,
   useUnits,
 } from "@/lib/queries";
+import { formatPeriodRange, toDateKey } from "@/lib/utils";
 import type {
   AutogenSubmitResult,
   CalendarLoadingScope,
@@ -42,17 +36,14 @@ import type {
 interface AutoGenTabProps {
   year: number;
   month: number;
-  weekStart: string;
-  onWeekStartChange: (value: string) => void;
+  // Anchor for the current 4-week period (Sunday-start, 28 days). The
+  // underlying autogen endpoint is still month-organized; this prop drives
+  // labelling and the demand window used for stat tiles.
+  periodStart: Date;
+  periodEnd: Date;
   onLoadingScopeChange?: (scope: CalendarLoadingScope | null) => void;
 }
 
-type ScheduleScope = "week" | "month";
-
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
 
 // Priority order when an employee has multiple entries this week — whichever
 // is "most actionable" drives their row's orb color.
@@ -73,57 +64,42 @@ interface EmployeeMembership {
 
 type RowError = { message: string; retry: () => void };
 
-const MONTH_SHORT = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-function formatWeekLabel(weekStart: string): string {
-  const d = new Date(`${weekStart}T00:00:00`);
-  return `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`;
-}
-
 export function AutoGenTab({
   year,
   month,
-  weekStart,
-  onWeekStartChange,
+  periodStart,
+  periodEnd,
   onLoadingScopeChange,
 }: AutoGenTabProps) {
-  const [scheduleScope, setScheduleScope] = useState<ScheduleScope>("week");
   const { data: staff = [] } = useAllActiveStaff();
   const { data: units = [] } = useUnits();
-  const { data: confirmations } = useConfirmations(
-    weekStart,
-    scheduleScope === "week",
-  );
+  // For the demo, we use the existing monthly autogen endpoint as the closest
+  // proxy for a "4-week rotation" build. Production should send a true
+  // 28-day request bounded by `periodStart`/`periodEnd`.
   const { data: monthlyConfirmations } = useMonthlyConfirmations(
     year,
     month,
-    scheduleScope === "month",
+    true,
   );
   const { data: demoConfig } = useDemoConfig();
-  const weekStartDate = useMemo(
-    () => new Date(`${weekStart}T00:00:00`),
-    [weekStart],
-  );
-  const { data: monthlyForDemand } = useMonthlySchedule(
-    weekStartDate.getFullYear(),
-    weekStartDate.getMonth() + 1,
-  );
   const { data: selectedMonthlySchedule } = useMonthlySchedule(year, month);
-  const activeConfirmations =
-    scheduleScope === "week" ? confirmations : monthlyConfirmations;
+  // When the 28-day period straddles a month boundary, pull the next month
+  // too so demand totals cover every day in the window. React Query dedupes
+  // when start/end fall in the same month.
+  const endYear = periodEnd.getFullYear();
+  const endMonth = periodEnd.getMonth() + 1;
+  const { data: secondaryMonthlySchedule } = useMonthlySchedule(
+    endYear,
+    endMonth,
+  );
+  const activeConfirmations = monthlyConfirmations;
 
-  const autogenMutation = useAutogenSubmit();
   const monthlyAutogenMutation = useAutogenSubmitMonth();
-  const commitMutation = useCommitDecisions(weekStart);
   const commitMonthlyMutation = useCommitMonthlyDecisions(year, month);
-  const removeMutation = useRemoveEntry(weekStart);
+  const removeMutation = useRemoveEntry(periodStart.toISOString().slice(0, 10));
 
-  // Drive the calendar's loading overlay. Week-scoped mutations highlight just
-  // the affected week row; month-scoped ones overlay the whole grid.
-  const weekBuilding = autogenMutation.isPending || commitMutation.isPending;
+  // Drive the calendar's loading overlay. The 4-week period is anchored to a
+  // single month for autogen, so we use the existing "month" loading scope.
   const monthBuilding =
     monthlyAutogenMutation.isPending || commitMonthlyMutation.isPending;
   useEffect(() => {
@@ -133,25 +109,12 @@ export function AutoGenTab({
         kind: "month",
         year,
         month,
-        label: `${MONTH_NAMES[month - 1]} ${year}`,
-      });
-    } else if (weekBuilding) {
-      onLoadingScopeChange({
-        kind: "week",
-        weekStart,
-        label: `week of ${formatWeekLabel(weekStart)}`,
+        label: formatPeriodRange(periodStart, periodEnd),
       });
     } else {
       onLoadingScopeChange(null);
     }
-  }, [
-    monthBuilding,
-    weekBuilding,
-    year,
-    month,
-    weekStart,
-    onLoadingScopeChange,
-  ]);
+  }, [monthBuilding, year, month, periodStart, periodEnd, onLoadingScopeChange]);
   useEffect(() => {
     return () => onLoadingScopeChange?.(null);
   }, [onLoadingScopeChange]);
@@ -172,15 +135,8 @@ export function AutoGenTab({
 
   const derivedPool = useMemo(() => {
     if (manualPool) return manualPool;
-    if (scheduleScope === "month") {
-      return new Set(staff.map((s) => s.employee_id));
-    }
-    const seeded = new Set<string>();
-    for (const e of activeConfirmations?.entries ?? []) {
-      if (e.confirmation_status !== "REPLACED") seeded.add(e.employee_id);
-    }
-    return seeded;
-  }, [manualPool, scheduleScope, staff, activeConfirmations]);
+    return new Set(staff.map((s) => s.employee_id));
+  }, [manualPool, staff]);
   const pool = derivedPool;
   const setPool = (updater: (prev: Set<string>) => Set<string>) => {
     setManualPool((prev) => updater(prev ?? derivedPool));
@@ -265,19 +221,15 @@ export function AutoGenTab({
   }
 
   function handleSubmit() {
-    if (scheduleScope === "month") {
-      monthlyAutogenMutation.mutate({
-        year,
-        month,
-        employee_pool: Array.from(pool),
-      });
-      return;
-    }
-
-    autogenMutation.mutate({
-      week_start: weekStart,
+    // 4-week (28-day) rotation. We send period_start/period_end so the
+    // autogen iterates the exact 28-day window the user is viewing rather
+    // than the surrounding calendar month.
+    monthlyAutogenMutation.mutate({
+      year,
+      month,
       employee_pool: Array.from(pool),
-      preserve_pending: true,
+      period_start: toDateKey(periodStart),
+      period_end: toDateKey(periodEnd),
     });
   }
 
@@ -300,25 +252,15 @@ export function AutoGenTab({
     setCommitError(null);
 
     try {
-      const result =
-        scheduleScope === "month"
-          ? await commitMonthlyMutation.mutateAsync({
-              year,
-              month,
-              employee_pool: Array.from(pool),
-              decisions: pending.map((entry) => ({
-                entry_id: entry.entry_id,
-                keep: intents.get(entry.entry_id) !== false,
-              })),
-            })
-          : await commitMutation.mutateAsync({
-              week_start: weekStart,
-              employee_pool: Array.from(pool),
-              decisions: pending.map((entry) => ({
-                entry_id: entry.entry_id,
-                keep: intents.get(entry.entry_id) !== false,
-              })),
-            });
+      const result = await commitMonthlyMutation.mutateAsync({
+        year,
+        month,
+        employee_pool: Array.from(pool),
+        decisions: pending.map((entry) => ({
+          entry_id: entry.entry_id,
+          keep: intents.get(entry.entry_id) !== false,
+        })),
+      });
 
       if (result.declined_employee_ids.length > 0) {
         const reducedPool = new Set(pool);
@@ -391,77 +333,51 @@ export function AutoGenTab({
   }
 
   const summary = activeConfirmations?.summary;
-  const submitPending =
-    scheduleScope === "week"
-      ? autogenMutation.isPending
-      : monthlyAutogenMutation.isPending;
+  const submitPending = monthlyAutogenMutation.isPending;
   const submitDisabled = submitPending || pool.size === 0;
   const pendingCount = summary?.pending ?? 0;
-  const acceptedCount = scheduleScope === "week" ? (summary?.accepted ?? 0) : 0;
   const commitDisabled =
     isCommitting ||
     pendingCount === 0 ||
-    commitMutation.isPending ||
     commitMonthlyMutation.isPending ||
-    autogenMutation.isPending ||
     monthlyAutogenMutation.isPending;
   const mutating =
-    commitMutation.isPending ||
     commitMonthlyMutation.isPending ||
     removeMutation.isPending ||
     isCommitting;
 
   const unitCount = units.length;
   const { peopleSlots, assignedSlots, openSlots } = useMemo(() => {
-    if (scheduleScope === "month") {
-      if (!selectedMonthlySchedule) {
-        const shifts = unitCount * new Date(year, month, 0).getDate() * 3;
-        return { peopleSlots: shifts * 2, assignedSlots: 0, openSlots: 0 };
-      }
-      let required = 0;
-      let assigned = 0;
-      for (const day of selectedMonthlySchedule.days) {
+    // 4-week rotation: count required + assigned across the 28-day window,
+    // pulling days from both months when the period straddles a boundary.
+    if (!selectedMonthlySchedule && !secondaryMonthlySchedule) {
+      const shifts = unitCount * 28 * 3;
+      return { peopleSlots: shifts * 2, assignedSlots: 0, openSlots: 0 };
+    }
+    const startMs = periodStart.getTime();
+    const endMs = periodStart.getTime() + 28 * 24 * 60 * 60 * 1000;
+    const seenDates = new Set<string>();
+    let required = 0;
+    let assigned = 0;
+    for (const schedule of [selectedMonthlySchedule, secondaryMonthlySchedule]) {
+      if (!schedule) continue;
+      for (const day of schedule.days) {
+        if (seenDates.has(day.date)) continue;
+        const ms = Date.parse(`${day.date}T00:00:00`);
+        if (ms < startMs || ms >= endMs) continue;
+        seenDates.add(day.date);
         for (const slot of day.slots) {
           required += slot.required_count;
           assigned += slot.assigned_employees.length;
         }
       }
-      return {
-        peopleSlots: required,
-        assignedSlots: assigned,
-        openSlots: Math.max(0, required - assigned),
-      };
     }
-
-    if (!monthlyForDemand) {
-      const shifts = unitCount * 7 * 3;
-      return {
-        peopleSlots: shifts * 2,
-        assignedSlots: acceptedCount,
-        openSlots: 0,
-      };
-    }
-    const startMs = weekStartDate.getTime();
-    const endMs = startMs + 7 * 24 * 60 * 60 * 1000;
-    let required = 0;
-    for (const day of monthlyForDemand.days) {
-      const ms = Date.parse(`${day.date}T00:00:00`);
-      if (ms < startMs || ms >= endMs) continue;
-      for (const slot of day.slots) {
-        required += slot.required_count;
-      }
-    }
-    return { peopleSlots: required, assignedSlots: acceptedCount, openSlots: 0 };
-  }, [
-    acceptedCount,
-    monthlyForDemand,
-    month,
-    scheduleScope,
-    selectedMonthlySchedule,
-    unitCount,
-    weekStartDate,
-    year,
-  ]);
+    return {
+      peopleSlots: required,
+      assignedSlots: assigned,
+      openSlots: Math.max(0, required - assigned),
+    };
+  }, [periodStart, selectedMonthlySchedule, secondaryMonthlySchedule, unitCount]);
 
   // Intent preview — count how many checked vs. unchecked will be committed.
   const intentPreview = useMemo(() => {
@@ -489,66 +405,32 @@ export function AutoGenTab({
 
   return (
     <div className="space-y-4">
+      {/* 4-week period header */}
       <div className="space-y-2">
-        <div className="grid grid-cols-2 rounded-lg border bg-muted/30 p-1">
-          <ScopeButton
-            active={scheduleScope === "week"}
-            icon={CalendarDays}
-            label="Week"
-            onClick={() => setScheduleScope("week")}
-          />
-          <ScopeButton
-            active={scheduleScope === "month"}
-            icon={CalendarRange}
-            label="Month"
-            onClick={() => setScheduleScope("month")}
-          />
-        </div>
-        {scheduleScope === "month" && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] leading-snug text-amber-900">
-            Monthly generation rebuilds {MONTH_NAMES[month - 1]} {year} from
-            the selected pool and sends those assignments into this same review
-            queue.
-          </div>
-        )}
-      </div>
-
-      {/* Week picker */}
-      {scheduleScope === "week" ? (
-        <div className="flex items-center justify-between gap-2">
-          <Label
-            htmlFor="autogen-week-start"
-            className="text-xs text-muted-foreground"
-          >
-            Week of
-          </Label>
-          <Input
-            id="autogen-week-start"
-            type="date"
-            value={weekStart}
-            onChange={(e) => onWeekStartChange(e.target.value)}
-            className="h-8 text-xs w-40"
-          />
-        </div>
-      ) : (
-        <div className="flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-2">
-          <span className="text-xs text-muted-foreground">Month</span>
+        <div className="rounded-lg border bg-card px-3 py-2 flex items-center justify-between gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            4-Week Period
+          </span>
           <span className="text-xs font-medium">
-            {MONTH_NAMES[month - 1]} {year}
+            {formatPeriodRange(periodStart, periodEnd)}
           </span>
         </div>
-      )}
+        <div className="rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] leading-snug text-amber-900">
+          Builds the 4-week rotation anchored at{" "}
+          {formatPeriodRange(periodStart, periodEnd)} from the selected staff
+          pool and sends assignments into this review queue.
+        </div>
+      </div>
 
       {/* Stat tile grid — progress at a glance */}
       <StatGrid
-        scope={scheduleScope}
         poolSize={pool.size}
         staffTotal={staff.length}
         fillPercent={fillPercent}
         assigned={assignedSlots}
         demand={peopleSlots}
-        pending={scheduleScope === "month" ? openSlots : pendingCount}
-        confirmed={scheduleScope === "week" ? acceptedCount : assignedSlots}
+        pending={openSlots}
+        confirmed={assignedSlots}
       />
 
       {/* Review banner — only when there are pending decisions */}
@@ -565,18 +447,7 @@ export function AutoGenTab({
       )}
 
       {/* Unfilled warning — only after a submit that couldn't fill everything */}
-      {scheduleScope === "week" &&
-        autogenMutation.isSuccess &&
-        autogenMutation.data &&
-        autogenMutation.data.unfilled_slots > 0 && (
-          <UnfilledCallout
-            count={autogenMutation.data.unfilled_slots}
-            warnings={autogenMutation.data.warnings}
-          />
-        )}
-
-      {scheduleScope === "month" &&
-        monthlyAutogenMutation.isSuccess &&
+      {monthlyAutogenMutation.isSuccess &&
         monthlyAutogenMutation.data &&
         monthlyAutogenMutation.data.unfilled_slots > 0 && (
           <UnfilledCallout
@@ -585,29 +456,7 @@ export function AutoGenTab({
           />
         )}
 
-      {/* Send success toast (auto-fades concept — just a subtle confirmation) */}
-      {scheduleScope === "week" &&
-        autogenMutation.isSuccess &&
-        autogenMutation.data &&
-        autogenMutation.data.unfilled_slots === 0 &&
-        autogenMutation.data.entries_generated > 0 && (
-          <div
-            className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-xs text-emerald-800"
-            role="status"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-            <span>
-              <strong>{autogenMutation.data.entries_generated}</strong> shift
-              {autogenMutation.data.entries_generated === 1 ? "" : "s"} assigned ·{" "}
-              <strong>{autogenMutation.data.notifications_sent}</strong> invite
-              {autogenMutation.data.notifications_sent === 1 ? "" : "s"} sent ·
-              replies due within {confirmationLabel}
-            </span>
-          </div>
-        )}
-
-      {scheduleScope === "month" &&
-        monthlyAutogenMutation.isSuccess &&
+      {monthlyAutogenMutation.isSuccess &&
         monthlyAutogenMutation.data &&
         monthlyAutogenMutation.data.unfilled_slots === 0 && (
           <div
@@ -619,7 +468,7 @@ export function AutoGenTab({
               <strong>{monthlyAutogenMutation.data.entries_generated}</strong>{" "}
               shift
               {monthlyAutogenMutation.data.entries_generated === 1 ? "" : "s"}{" "}
-              scheduled for {MONTH_NAMES[month - 1]} {year}
+              scheduled for {formatPeriodRange(periodStart, periodEnd)}
             </span>
           </div>
         )}
@@ -737,52 +586,21 @@ export function AutoGenTab({
       {/* Footer — Send invites CTA */}
       <div className="flex items-center justify-between gap-3 pt-1">
         <div className="text-[11px] text-muted-foreground leading-tight">
-          {scheduleScope === "month" ? (
-            "Builds the selected month from the checked staff pool"
-          ) : pendingCount > 0 ? (
-            <span className="text-amber-700">
-              {pendingCount} pending{" "}
-              {pendingCount === 1 ? "reply" : "replies"} won&apos;t be re-sent
-            </span>
-          ) : pool.size === 0 ? (
-            "Add staff to pool to enable sending"
-          ) : (
-            "Sends invites to newly added pool members"
-          )}
+          Builds the 4-week rotation from the checked staff pool
         </div>
         <Button
           size="sm"
           onClick={handleSubmit}
           disabled={submitDisabled}
           className="gap-1.5 h-8"
-          aria-label={
-            scheduleScope === "month"
-              ? `Generate schedule for ${MONTH_NAMES[month - 1]} ${year}`
-              : "Send invites to newly added pool members"
-          }
+          aria-label={`Generate 4-week schedule for ${formatPeriodRange(periodStart, periodEnd)}`}
         >
           <Sparkles className="h-3.5 w-3.5" />
-          {submitPending
-            ? "Building…"
-            : scheduleScope === "month"
-              ? "Build month"
-              : "Build & send invites"}
+          {submitPending ? "Building…" : "Build 4-week schedule"}
         </Button>
       </div>
 
-      {scheduleScope === "week" && autogenMutation.isError && (
-        <div
-          className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
-          role="alert"
-        >
-          <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <span>
-            {(autogenMutation.error as Error)?.message ?? "Send failed."}
-          </span>
-        </div>
-      )}
-
-      {scheduleScope === "month" && monthlyAutogenMutation.isError && (
+      {monthlyAutogenMutation.isError && (
         <div
           className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
           role="alert"
@@ -790,7 +608,7 @@ export function AutoGenTab({
           <XCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <span>
             {(monthlyAutogenMutation.error as Error)?.message ??
-              "Monthly generation failed."}
+              "4-week generation failed."}
           </span>
         </div>
       )}
@@ -798,39 +616,9 @@ export function AutoGenTab({
   );
 }
 
-function ScopeButton({
-  active,
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "flex h-8 items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors",
-        active
-          ? "bg-background text-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </button>
-  );
-}
-
 /* ── Stat grid ───────────────────────────────────────────────────────── */
 
 interface StatGridProps {
-  scope: ScheduleScope;
   poolSize: number;
   staffTotal: number;
   fillPercent: number;
@@ -841,7 +629,6 @@ interface StatGridProps {
 }
 
 function StatGrid({
-  scope,
   poolSize,
   staffTotal,
   fillPercent,
@@ -856,7 +643,7 @@ function StatGrid({
       <div className="col-span-2 rounded-lg border bg-card px-4 py-3">
         <div className="flex items-baseline justify-between gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {scope === "month" ? "Month progress" : "Week progress"}
+            4-Week progress
           </span>
           <span className="text-[11px] text-muted-foreground tabular-nums">
             {assigned} / {demand} shifts
@@ -885,28 +672,18 @@ function StatGrid({
 
       <StatTile label="Pool" value={poolSize} sublabel={`of ${staffTotal}`} />
       <StatTile
-        label={scope === "month" ? "Open" : "Waiting"}
+        label="Open"
         value={pending}
-        sublabel={
-          pending === 0
-            ? "—"
-            : scope === "month"
-              ? "shifts"
-              : "awaiting reply"
-        }
+        sublabel={pending === 0 ? "—" : "shifts"}
         tone={pending > 0 ? "amber" : undefined}
       />
       <StatTile
-        label={scope === "month" ? "Assigned" : "Confirmed"}
+        label="Assigned"
         value={confirmed}
         sublabel="shifts"
         tone={confirmed > 0 ? "emerald" : undefined}
       />
-      <StatTile
-        label="Demand"
-        value={demand}
-        sublabel="shifts"
-      />
+      <StatTile label="Demand" value={demand} sublabel="shifts" />
     </div>
   );
 }
